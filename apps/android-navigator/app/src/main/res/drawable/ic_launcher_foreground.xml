@@ -5,49 +5,55 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 1. Trazadas de carretera con curvas gemelas que enmarcan la "M" -->
+    <!-- 1. Calzada Asfáltica de Carretera de Curvas (Limpia, continua y sólida) -->
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="5.5"
+        android:strokeColor="#24334A"
+        android:strokeWidth="20"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M 27,78 C 29,62 38,58 48,68" />
+        android:pathData="M 30,86 C 30,66 76,72 76,50 C 76,34 56,28 54,27" />
 
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="5.5"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M 81,78 C 79,62 70,58 60,68" />
-
-    <!-- Línea central discontinua de la vía en Verde Neón -->
+    <!-- 2. Trazada Neón Racing / Línea de Rápida Trazada -->
     <path
         android:fillColor="#00000000"
         android:strokeColor="#00E676"
-        android:strokeWidth="3.5"
+        android:strokeWidth="4.5"
         android:strokeLineCap="round"
-        android:pathData="M 54,68 L 54,80" />
+        android:strokeLineJoin="round"
+        android:pathData="M 30,86 C 30,66 76,72 76,50 C 76,34 56,28 54,27" />
 
-    <!-- 2. Flecha de Navegación Aerodinámica / Ápice Deportivo -->
-    <!-- Sombra suave inferior -->
+    <!-- 3. Baliza / Punto Ápice de Seguridad en Ámbar DGT -->
     <path
-        android:fillColor="#090E17"
-        android:pathData="M 54,28 L 78,66 L 54,55 L 30,66 Z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FF9100"
+        android:strokeWidth="1.5"
+        android:strokeAlpha="0.6"
+        android:pathData="M 76, 50 m -7, 0 a 7,7 0 1,0 14,0 a 7,7 0 1,0 -14,0" />
 
-    <!-- Flecha Principal en Verde Neón Racing -->
-    <path
-        android:fillColor="#00E676"
-        android:pathData="M 54,26 L 76,62 L 54,52 L 32,62 Z" />
-
-    <!-- Núcleo de la flecha con contraste titanium -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M 54,32 L 67,54 L 54,48 L 41,54 Z" />
-
-    <!-- Faro / Punto Ápice en Ámbar de Seguridad -->
     <path
         android:fillColor="#FF9100"
-        android:pathData="M 54, 43 m -2.8, 0 a 2.8,2.8 0 1,0 5.6,0 a 2.8,2.8 0 1,0 -5.6,0" />
+        android:pathData="M 76, 50 m -4.5, 0 a 4.5,4.5 0 1,0 9,0 a 4.5,4.5 0 1,0 -9,0" />
+
+    <!-- 4. Flecha de Navegación Deportiva / Cursor de la Moto -->
+    <group
+        android:pivotX="54"
+        android:pivotY="27"
+        android:rotation="-15">
+
+        <!-- Sombra / Perfil exterior de la flecha -->
+        <path
+            android:fillColor="#090E17"
+            android:pathData="M 54,14 L 68,44 L 54,37 L 40,44 Z" />
+
+        <!-- Cuerpo de la flecha en Verde Neón -->
+        <path
+            android:fillColor="#00E676"
+            android:pathData="M 54,16 L 66,42 L 54,36 L 42,42 Z" />
+
+        <!-- Núcleo de contraste en Blanco Titanio -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M 54,22 L 62,39 L 54,34 L 46,39 Z" />
+    </group>
 </vector>

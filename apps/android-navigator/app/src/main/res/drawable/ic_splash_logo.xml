@@ -1,58 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="200dp"
-    android:height="200dp"
-    android:viewportWidth="200"
-    android:viewportHeight="200">
-
-    <!-- Círculo central sutil de fondo -->
-    <path
-        android:fillColor="#151D2E"
-        android:pathData="M 100, 100 m -80, 0 a 80,80 0 1,0 160,0 a 80,80 0 1,0 -160,0" />
+    android:width="160dp"
+    android:height="160dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
 
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#1E293B"
-        android:strokeWidth="3"
-        android:pathData="M 100, 100 m -80, 0 a 80,80 0 1,0 160,0 a 80,80 0 1,0 -160,0" />
-
-    <!-- Trazadas M en blanco puro -->
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="10"
+        android:strokeColor="#24334A"
+        android:strokeWidth="18"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M 50,145 C 54,115 70,108 89,126" />
+        android:pathData="M 30,86 C 30,66 76,72 76,50 C 76,34 56,28 54,27" />
 
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="10"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M 150,145 C 146,115 130,108 111,126" />
-
-    <!-- Línea central en Verde Neón -->
     <path
         android:fillColor="#00000000"
         android:strokeColor="#00E676"
-        android:strokeWidth="6"
+        android:strokeWidth="4.5"
         android:strokeLineCap="round"
-        android:pathData="M 100,126 L 100,150" />
+        android:strokeLineJoin="round"
+        android:pathData="M 30,86 C 30,66 76,72 76,50 C 76,34 56,28 54,27" />
 
-    <!-- Flecha de Navegación Ápice -->
-    <path
-        android:fillColor="#00E676"
-        android:pathData="M 100,48 L 142,115 L 100,96 L 58,115 Z" />
-
-    <!-- Núcleo interior titanium -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M 100,60 L 125,100 L 100,90 L 75,100 Z" />
-
-    <!-- Punto Ápice en Ámbar -->
     <path
         android:fillColor="#FF9100"
-        android:pathData="M 100, 80 m -5, 0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0" />
+        android:pathData="M 76, 50 m -4.5, 0 a 4.5,4.5 0 1,0 9,0 a 4.5,4.5 0 1,0 -9,0" />
+
+    <group
+        android:pivotX="54"
+        android:pivotY="27"
+        android:rotation="-15">
+        <path
+            android:fillColor="#00E676"
+            android:pathData="M 54,16 L 66,42 L 54,36 L 42,42 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M 54,22 L 62,39 L 54,34 L 46,39 Z" />
+    </group>
 </vector>

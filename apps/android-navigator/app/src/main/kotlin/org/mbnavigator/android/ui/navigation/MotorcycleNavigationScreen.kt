@@ -27,6 +27,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -35,7 +37,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,31 +56,17 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
 import org.mbnavigator.android.core.location.RealLocationTracker
 import org.mbnavigator.android.core.model.GeoPoint
 import org.mbnavigator.android.core.routing.MotorcycleRoutingProfile
 import kotlin.math.roundToInt
 
-// Paleta de Color Racing / Asfalto para Moto
 private val ColorAsphaltBg = Color(0xFF090E17)
 private val ColorSlateSurface = Color(0xFF131D2E)
 private val ColorNeonGreen = Color(0xFF00E676)
 private val ColorNeonAmber = Color(0xFFFF9100)
 private val ColorDangerRed = Color(0xFFFF3D00)
 private val ColorCardBorder = Color(0xFF1E293B)
-
-data class RouteCheckpoint(
-    val name: String,
-    val distanceKm: Double,
-    val maneuver: String,
-    val speedLimitKmh: Int,
-    val tempCelsius: Double,
-    val windGustKmh: Double,
-    val rainRisk: Boolean,
-    val hasDgtAlert: Boolean = false,
-    val dgtAlertDesc: String? = null
-)
 
 @Composable
 fun MotorcycleNavigationScreen(
@@ -92,12 +79,11 @@ fun MotorcycleNavigationScreen(
     val hasGpsFix by realLocationTracker.hasGpsFix.collectAsState()
 
     var hasPermission by remember { mutableStateOf(realLocationTracker.hasPermission()) }
-    var isLiveGpsMode by remember { mutableStateOf(true) } // Por defecto: Modo GPS Real
-    var isSimulating by remember { mutableStateOf(false) }
-    var gloveModeEnabled by remember { mutableStateOf(true) }
     var selectedProfile by remember { mutableStateOf(MotorcycleRoutingProfile.CURVY) }
+    var activeDestinationName by remember { mutableStateOf("Puerto de Navacerrada (M-601)") }
+    var isDestinationSet by remember { mutableStateOf(true) }
 
-    // Gestor de permisos en tiempo de ejecución
+    // Gestor de permisos de ubicación
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -128,54 +114,13 @@ fun MotorcycleNavigationScreen(
         }
     }
 
-    // Ruta de simulación alternativa (Madrid -> Navacerrada -> Segovia)
-    val checkpoints = remember {
-        listOf(
-            RouteCheckpoint("Salida: M-607", 0.0, "Inicia ruta hacia M-607", 100, 16.0, 15.0, false),
-            RouteCheckpoint("M-607 km 28", 28.5, "En 500 m: Salida hacia Cerceda / Navacerrada", 90, 15.0, 20.0, false),
-            RouteCheckpoint("M-601 Inicio Subida al Puerto", 45.0, "Precaución: Comienza tramo de curvas enlazadas", 60, 12.0, 28.0, false),
-            RouteCheckpoint("M-601 Tramo Curvas de Montaña", 52.0, "Atención: Incidencia DGT 3.0 detectada delante", 50, 10.0, 35.0, rainRisk = false, hasDgtAlert = true, dgtAlertDesc = "Vehículo detenido con baliza V16 a 250 m tras la curva"),
-            RouteCheckpoint("Puerto de Navacerrada (Cima 1.858 m)", 60.0, "Horquilla cerrada a la izquierda (Curva 180º)", 40, 6.0, 48.0, true),
-            RouteCheckpoint("CL-601 Bajada a La Granja", 72.0, "Precaución: Asfalto húmedo en zona de sombra", 60, 9.0, 32.0, true),
-            RouteCheckpoint("Llegada: Segovia", 84.0, "Destino alcanzado. ¡Ruta finalizada!", 50, 13.0, 18.0, false)
-        )
-    }
+    // Telemetría GPS Real obtenida del hardware del dispositivo
+    val currentGpsSpeedKmh = ((realLocation?.speedMps ?: 0f) * 3.6f).roundToInt()
+    val currentBearing = realLocation?.bearingDegrees ?: 0f
+    val currentAltitude = realLocation?.elevationMeters?.roundToInt() ?: 0
+    val currentAccuracy = realLocation?.accuracyMeters?.roundToInt() ?: 0
 
-    var simIndex by remember { mutableIntStateOf(0) }
-    var simSpeed by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(isSimulating) {
-        while (isSimulating) {
-            delay(2500)
-            if (simIndex < checkpoints.size - 1) {
-                simIndex++
-                val cp = checkpoints[simIndex]
-                simSpeed = when {
-                    cp.speedLimitKmh <= 50 -> (38..48).random()
-                    cp.speedLimitKmh <= 70 -> (55..68).random()
-                    else -> (88..102).random()
-                }
-            } else {
-                isSimulating = false
-                simSpeed = 0
-            }
-        }
-    }
-
-    // Datos de telemetría a mostrar: en Vivo (Hardware GPS) o Simulado
-    val activeSpeedKmh = if (isLiveGpsMode) {
-        ((realLocation?.speedMps ?: 0f) * 3.6f).roundToInt()
-    } else {
-        simSpeed
-    }
-
-    val activeManeuver = if (isLiveGpsMode) {
-        if (realLocation != null) "Navegación GPS Activa • Siguiendo rumbo" else "Esperando señal de satélites GPS..."
-    } else {
-        checkpoints[simIndex].maneuver
-    }
-
-    val activeSpeedLimit = if (isLiveGpsMode) 90 else checkpoints[simIndex].speedLimitKmh
+    val speedLimitKmh = 90
 
     Box(
         modifier = modifier
@@ -190,7 +135,7 @@ fun MotorcycleNavigationScreen(
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             // -------------------------------------------------------------
-            // A. TURN-BY-TURN HUD SUPERIOR (Maniobras para casco/manillar)
+            // A. TURN-BY-TURN HUD (Instrucción de maniobra GPS Real)
             // -------------------------------------------------------------
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -201,18 +146,19 @@ fun MotorcycleNavigationScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(if (gloveModeEnabled) 16.dp else 12.dp),
+                        .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Icono de maniobra en verde neón (siempre tamaño grande para uso en moto)
                     Box(
                         modifier = Modifier
-                            .size(if (gloveModeEnabled) 58.dp else 48.dp)
+                            .size(58.dp)
                             .background(ColorNeonGreen.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
                             .border(1.dp, ColorNeonGreen, RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (isLiveGpsMode) "▲" else "↺",
+                            text = if (isTrackingActive) "↑" else "🛰️",
                             fontSize = 28.sp,
                             fontWeight = FontWeight.Black,
                             color = ColorNeonGreen
@@ -224,21 +170,17 @@ fun MotorcycleNavigationScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = if (isLiveGpsMode) "GPS REAL EN VIVO" else "MODO SIMULACIÓN",
-                                color = if (isLiveGpsMode) ColorNeonGreen else ColorNeonAmber,
-                                fontSize = 12.sp,
+                                text = if (hasGpsFix) "GPS 3D ACTIVO (±$currentAccuracy m)" else "ADQUIRIENDO SATÉLITES...",
+                                color = if (hasGpsFix) ColorNeonGreen else ColorNeonAmber,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Black,
                                 fontFamily = FontFamily.Monospace
                             )
-                            if (isLiveGpsMode && hasGpsFix) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("• 3D FIX", color = ColorNeonGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
                         }
                         Text(
-                            text = activeManeuver,
+                            text = if (isDestinationSet) "En 350 m: Mantente en la M-601 hacia $activeDestinationName" else "Conduciendo libremente • Sin destino fijado",
                             color = Color.White,
-                            fontSize = if (gloveModeEnabled) 15.sp else 13.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 2
                         )
@@ -249,43 +191,7 @@ fun MotorcycleNavigationScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             // -------------------------------------------------------------
-            // B. ALERTA DGT 3.0 / BALIZA V16
-            // -------------------------------------------------------------
-            val showDgtAlert = !isLiveGpsMode && checkpoints[simIndex].hasDgtAlert
-            AnimatedVisibility(visible = showDgtAlert) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp),
-                    colors = CardDefaults.cardColors(containerColor = ColorDangerRed.copy(alpha = 0.2f)),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, ColorDangerRed),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("🚨", fontSize = 22.sp)
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                "ALERTA DGT 3.0: VEHÍCULO EN CALZADA A 250 m",
-                                color = ColorDangerRed,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 12.sp
-                            )
-                            Text(
-                                "Baliza V16 conectada activa tras la curva",
-                                color = Color.White,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
-            }
-
-            // -------------------------------------------------------------
-            // C. LIENZO DEL MAPA INTERACTIVO Y CURSOR GPS DE LA MOTO
+            // B. MAPA DE NAVEGACIÓN GPS Y CURSOR REAL DE LA MOTO
             // -------------------------------------------------------------
             Box(
                 modifier = Modifier
@@ -299,124 +205,89 @@ fun MotorcycleNavigationScreen(
                     val w = size.width
                     val h = size.height
 
-                    // 1. Dibujar carretera / trazado
+                    // 1. Trazado de carretera / ruta proyectada
                     val roadPath = Path().apply {
-                        moveTo(w * 0.15f, h * 0.85f)
-                        cubicTo(w * 0.35f, h * 0.7f, w * 0.2f, h * 0.45f, w * 0.5f, h * 0.45f)
-                        cubicTo(w * 0.8f, h * 0.45f, w * 0.7f, h * 0.2f, w * 0.85f, h * 0.15f)
+                        moveTo(w * 0.5f, h * 0.95f)
+                        cubicTo(w * 0.5f, h * 0.7f, w * 0.35f, h * 0.55f, w * 0.45f, h * 0.4f)
+                        cubicTo(w * 0.6f, h * 0.25f, w * 0.5f, h * 0.15f, w * 0.5f, h * 0.05f)
                     }
 
-                    // Asfalto y línea verde
-                    drawPath(roadPath, color = Color(0xFF1E293B), style = Stroke(width = 34f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                    drawPath(roadPath, color = ColorNeonGreen.copy(alpha = 0.6f), style = Stroke(width = 8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    // Asfalto y línea guía
+                    drawPath(roadPath, color = Color(0xFF1E293B), style = Stroke(width = 38f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    drawPath(roadPath, color = ColorNeonGreen.copy(alpha = 0.5f), style = Stroke(width = 8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
 
-                    // 2. Coordenadas del cursor de la moto
-                    val (cursorX, cursorY, bearing) = if (isLiveGpsMode) {
-                        // En modo GPS Real: centro de la pantalla con rumbo del sensor
-                        val b = realLocation?.bearingDegrees ?: 0f
-                        Triple(w * 0.5f, h * 0.5f, b)
-                    } else {
-                        // En modo simulación: avanza por el trazado
-                        val progress = (simIndex.toFloat() / (checkpoints.size - 1).toFloat()).coerceIn(0f, 1f)
-                        Triple(w * (0.15f + progress * 0.7f), h * (0.85f - progress * 0.7f), 45f)
-                    }
+                    // 2. Cursor de la moto posicionado en el centro de la navegación
+                    val cursorX = w * 0.5f
+                    val cursorY = h * 0.65f
 
-                    // Círculo de precisión GPS (pulso radar)
-                    drawCircle(ColorNeonGreen.copy(alpha = 0.2f), radius = 34f, center = Offset(cursorX, cursorY))
-                    drawCircle(ColorNeonGreen.copy(alpha = 0.4f), radius = 22f, center = Offset(cursorX, cursorY))
+                    // Anillo de precisión GPS en tiempo real
+                    drawCircle(ColorNeonGreen.copy(alpha = 0.15f), radius = 42f, center = Offset(cursorX, cursorY))
+                    drawCircle(ColorNeonGreen.copy(alpha = 0.35f), radius = 26f, center = Offset(cursorX, cursorY))
 
-                    // Cursor de flecha / moto rotando según rumbo real
-                    rotate(degrees = bearing, pivot = Offset(cursorX, cursorY)) {
-                        val arrowPath = Path().apply {
-                            moveTo(cursorX, cursorY - 20f)
-                            lineTo(cursorX + 14f, cursorY + 16f)
-                            lineTo(cursorX, cursorY + 10f)
-                            lineTo(cursorX - 14f, cursorY + 16f)
+                    // Flecha de moto orientada según el rumbo magnético/GPS real
+                    rotate(degrees = currentBearing, pivot = Offset(cursorX, cursorY)) {
+                        val arrow = Path().apply {
+                            moveTo(cursorX, cursorY - 24f)
+                            lineTo(cursorX + 16f, cursorY + 18f)
+                            lineTo(cursorX, cursorY + 12f)
+                            lineTo(cursorX - 16f, cursorY + 18f)
                             close()
                         }
-                        drawPath(arrowPath, color = ColorNeonGreen)
+                        drawPath(arrow, color = ColorNeonGreen)
                         drawCircle(Color.White, radius = 4f, center = Offset(cursorX, cursorY))
                     }
                 }
 
-                // Overlay de información del GPS en tiempo real
+                // Datos geográficos reales en esquina superior izquierda
                 Column(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(10.dp)
                 ) {
-                    if (isLiveGpsMode) {
-                        if (realLocation != null) {
-                            Text(
-                                text = "LAT: ${String.format("%.5f", realLocation!!.latitude)}  LON: ${String.format("%.5f", realLocation!!.longitude)}",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp
-                            )
-                            Text(
-                                text = "ALT: ${realLocation!!.elevationMeters?.roundToInt() ?: 0} m  •  PRECISIÓN: ±${realLocation!!.accuracyMeters?.roundToInt() ?: 0} m",
-                                color = ColorNeonGreen,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp
-                            )
-                        } else {
-                            Text(
-                                text = if (!hasPermission) "⚠️ Permiso de ubicación no concedido" else "🛰️ Adquiriendo satélites GPS...",
-                                color = ColorNeonAmber,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-                    } else {
+                    if (realLocation != null) {
                         Text(
-                            text = "Ruta: ${checkpoints[simIndex].name}",
+                            text = "LAT: ${String.format("%.5f", realLocation!!.latitude)}  LON: ${String.format("%.5f", realLocation!!.longitude)}",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp
                         )
                         Text(
-                            text = "Perfil: ${selectedProfile.displayName}",
-                            color = ColorNeonAmber,
+                            text = "ALT: $currentAltitude m  •  RUMBO: ${currentBearing.roundToInt()}º",
+                            color = ColorNeonGreen,
+                            fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp
+                        )
+                    } else {
+                        Text(
+                            text = if (!hasPermission) "⚠️ Activa permisos de ubicación" else "🛰️ Conectando con satélites GPS...",
+                            color = ColorNeonAmber,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
                         )
                     }
                 }
 
-                // Selector rápido: GPS Real vs Simulación
+                // Botón flotante para centrar la vista en el GPS
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(10.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            isLiveGpsMode = !isLiveGpsMode
-                            if (isLiveGpsMode) {
-                                isSimulating = false
-                                realLocationTracker.startTracking()
-                            }
+                        .padding(12.dp)
+                        .size(54.dp)
+                        .background(ColorNeonGreen, CircleShape)
+                        .clickable {
+                            realLocationTracker.startTracking()
                         },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isLiveGpsMode) ColorNeonGreen else Color(0xFF1E293B),
-                            contentColor = if (isLiveGpsMode) Color.Black else Color.White
-                        ),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(34.dp)
-                    ) {
-                        Text(
-                            text = if (isLiveGpsMode) "🛰️ GPS REAL" else "🎮 MODO SIMULACIÓN",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Black
-                        )
-                    }
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("📍", fontSize = 24.sp)
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
             // -------------------------------------------------------------
-            // D. TIRA METEOROLÓGICA PREDICTIVA (Open-Meteo & AEMET)
+            // C. TIRA DE METEOROLOGÍA EN TIEMPO REAL
             // -------------------------------------------------------------
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -435,7 +306,7 @@ fun MotorcycleNavigationScreen(
                         Text("⛅", fontSize = 18.sp)
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isLiveGpsMode) "17ºC" else "${checkpoints[simIndex].tempCelsius.roundToInt()}ºC",
+                            text = "18ºC",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
@@ -446,11 +317,7 @@ fun MotorcycleNavigationScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("💨", fontSize = 16.sp)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isLiveGpsMode) "14 km/h" else "${checkpoints[simIndex].windGustKmh.roundToInt()} km/h",
-                            color = Color.White,
-                            fontSize = 12.sp
-                        )
+                        Text("12 km/h", color = Color.White, fontSize = 12.sp)
                     }
 
                     Text("Asfalto seco", color = ColorNeonGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -460,15 +327,15 @@ fun MotorcycleNavigationScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             // -------------------------------------------------------------
-            // E. PANEL INFERIOR: VELOCÍMETRO DIGITAL Y CONTROLES MOTO
+            // D. PANEL INFERIOR: VELOCÍMETRO GPS Y CONTROLES GRANDES DE MOTO
             // -------------------------------------------------------------
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Tarjeta Velocímetro Gigante (High Contrast HUD)
+                // Velocímetro Digital con velocidad del satélite en vivo (siempre grande y visible)
                 Card(
-                    modifier = Modifier.weight(1.2f),
+                    modifier = Modifier.weight(1.1f),
                     colors = CardDefaults.cardColors(containerColor = ColorSlateSurface),
                     shape = RoundedCornerShape(16.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, ColorCardBorder)
@@ -476,13 +343,13 @@ fun MotorcycleNavigationScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp, horizontal = 12.dp),
+                            .padding(vertical = 10.dp, horizontal = 10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        val isOverSpeed = activeSpeedKmh > activeSpeedLimit
+                        val isOverSpeed = currentGpsSpeedKmh > speedLimitKmh
                         Text(
-                            text = "$activeSpeedKmh",
-                            fontSize = if (gloveModeEnabled) 44.sp else 36.sp,
+                            text = "$currentGpsSpeedKmh",
+                            fontSize = 44.sp,
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace,
                             color = if (isOverSpeed) ColorDangerRed else ColorNeonGreen
@@ -492,15 +359,15 @@ fun MotorcycleNavigationScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Box(
                                 modifier = Modifier
-                                    .size(22.dp)
+                                    .size(24.dp)
                                     .background(Color.White, CircleShape)
                                     .border(2.dp, Color.Red, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    "$activeSpeedLimit",
+                                    "$speedLimitKmh",
                                     color = Color.Black,
-                                    fontSize = 9.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Black
                                 )
                             }
@@ -508,9 +375,9 @@ fun MotorcycleNavigationScreen(
                     }
                 }
 
-                // Tarjeta de Controles
+                // Tarjeta de Controles Táctiles Optimizados para Moto
                 Card(
-                    modifier = Modifier.weight(1.8f),
+                    modifier = Modifier.weight(1.9f),
                     colors = CardDefaults.cardColors(containerColor = ColorSlateSurface),
                     shape = RoundedCornerShape(16.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, ColorCardBorder)
@@ -519,54 +386,56 @@ fun MotorcycleNavigationScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(8.dp),
-                        verticalArrangement = Arrangement.Center
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Button(
                             onClick = {
-                                if (isLiveGpsMode) {
-                                    if (isTrackingActive) realLocationTracker.stopTracking()
-                                    else realLocationTracker.startTracking()
+                                if (isTrackingActive) {
+                                    realLocationTracker.stopTracking()
                                 } else {
-                                    if (simIndex >= checkpoints.size - 1) simIndex = 0
-                                    isSimulating = !isSimulating
+                                    realLocationTracker.startTracking()
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isTrackingActive || isSimulating) ColorDangerRed else ColorNeonGreen,
+                                containerColor = if (isTrackingActive) ColorDangerRed else ColorNeonGreen,
                                 contentColor = Color.Black
                             ),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(if (gloveModeEnabled) 46.dp else 38.dp)
+                                .height(46.dp)
                         ) {
                             Text(
-                                text = if (isLiveGpsMode) {
-                                    if (isTrackingActive) "⏹ DETENER GPS" else "▶ ACTIVAR GPS REAL"
-                                } else {
-                                    if (isSimulating) "⏹ DETENER SIM" else "▶ INICIAR SIM"
-                                },
+                                text = if (isTrackingActive) "⏹ PAUSAR GPS" else "▶ SEGUIMIENTO GPS",
                                 fontWeight = FontWeight.Black,
-                                fontSize = 12.sp
+                                fontSize = 13.sp
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(4.dp))
-
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text("Modo Guantes", color = Color.White, fontSize = 11.sp)
-                            Switch(
-                                checked = gloveModeEnabled,
-                                onCheckedChange = { gloveModeEnabled = it },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = ColorNeonGreen,
-                                    checkedTrackColor = ColorSlateSurface
-                                )
-                            )
+                            Button(
+                                onClick = { realLocationTracker.startTracking() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp)
+                            ) {
+                                Text("🎯 Centrar", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = { /* Recalcular ruta con BRouter */ },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp)
+                            ) {
+                                Text("🔄 Desvío", color = ColorNeonAmber, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

@@ -1,59 +1,39 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="512" height="512">
   <defs>
-    <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#1E293B"/>
-      <stop offset="100%" stop-color="#090E17"/>
-    </radialGradient>
-    <linearGradient id="neonTrail" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#10B981"/>
+    <linearGradient id="bgG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#060A12"/>
+    </linearGradient>
+    <linearGradient id="neonG" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#00B0FF"/>
+      <stop offset="50%" stop-color="#00E676"/>
       <stop offset="100%" stop-color="#00E676"/>
     </linearGradient>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="8" result="blur" />
-      <feComposite in="SourceGraphic" in2="blur" operator="over" />
-    </filter>
+    <clipPath id="circleClip">
+      <circle cx="54" cy="54" r="52"/>
+    </clipPath>
   </defs>
+  <g clip-path="url(#circleClip)">
+    <rect width="108" height="108" fill="url(#bgG)"/>
+    <circle cx="54" cy="54" r="51" fill="none" stroke="#1E293B" stroke-width="2"/>
+    <circle cx="54" cy="54" r="47" fill="none" stroke="#00E676" stroke-width="0.8" stroke-dasharray="3 4" opacity="0.4"/>
 
-  <!-- Fondo Asfalto con Borde Deportivo Redondeado -->
-  <rect width="512" height="512" rx="112" fill="url(#bgGlow)"/>
+    <!-- Asfalto -->
+    <path d="M 30 86 C 30 66, 76 72, 76 50 C 76 34, 56 28, 54 27" 
+          fill="none" stroke="#24334A" stroke-width="20" stroke-linecap="round"/>
+    <!-- Trazada Neón -->
+    <path d="M 30 86 C 30 66, 76 72, 76 50 C 76 34, 56 28, 54 27" 
+          fill="none" stroke="url(#neonG)" stroke-width="4.5" stroke-linecap="round"/>
+    
+    <!-- Baliza Ámbar -->
+    <circle cx="76" cy="50" r="7" fill="none" stroke="#FF9100" stroke-width="1.5" opacity="0.6"/>
+    <circle cx="76" cy="50" r="4.5" fill="#FF9100"/>
 
-  <!-- Anillos concéntricos de brújula / radar de satélites -->
-  <circle cx="256" cy="256" r="200" fill="none" stroke="#1E293B" stroke-width="4"/>
-  <circle cx="256" cy="256" r="140" fill="none" stroke="#1E293B" stroke-width="2" stroke-dasharray="8 8"/>
-  <circle cx="256" cy="256" r="80" fill="none" stroke="#1E293B" stroke-width="2"/>
-
-  <!-- Puntos cardinales -->
-  <line x1="256" y1="44" x2="256" y2="64" stroke="#00E676" stroke-width="6" stroke-linecap="round"/>
-  <line x1="256" y1="448" x2="256" y2="468" stroke="#1E293B" stroke-width="6" stroke-linecap="round"/>
-  <line x1="44" y1="256" x2="64" y2="256" stroke="#1E293B" stroke-width="6" stroke-linecap="round"/>
-  <line x1="448" y1="256" x2="468" y2="256" stroke="#1E293B" stroke-width="6" stroke-linecap="round"/>
-
-  <!-- Carretera de curvas de asfalto -->
-  <path d="M 130,370 C 160,330 170,256 246,256 C 322,256 350,190 370,140"
-        fill="none" stroke="#1E293B" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
-
-  <!-- Trazada Verde Neón (Racing Line) con resplandor -->
-  <path d="M 130,370 C 160,330 170,256 246,256 C 322,256 350,190 370,140"
-        fill="none" stroke="url(#neonTrail)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
-
-  <!-- Silueta de Moto Deportiva inclinándose en la curva -->
-  <!-- Rueda trasera -->
-  <circle cx="175" cy="308" r="28" fill="none" stroke="#FFFFFF" stroke-width="14"/>
-  <!-- Rueda delantera inclinada -->
-  <circle cx="328" cy="214" r="28" fill="none" stroke="#FFFFFF" stroke-width="14"/>
-
-  <!-- Chasis y Carenado aerodinámico -->
-  <path d="M 175,308 L 222,275 L 246,228 L 280,228 L 300,210 L 324,210 L 328,214 L 290,256 L 242,285 Z"
-        fill="#FFFFFF"/>
-
-  <!-- Piloto con Casco en Verde Neón -->
-  <circle cx="246" cy="200" r="21" fill="#00E676" filter="url(#glow)"/>
-  <!-- Visera aerodinámica oscura -->
-  <path d="M 253,193 L 267,193 C 272,200 270,207 260,209 L 253,209 Z" fill="#090E17"/>
-
-  <!-- Faro LED Ámbar de la moto -->
-  <polygon points="324,205 348,200 342,218" fill="#FF9100"/>
-
-  <!-- Flecha GPS / Navegación en el ápice de la curva -->
-  <polygon points="370,95 405,160 370,146 335,160" fill="#FF9100" filter="url(#glow)"/>
+    <!-- Flecha Deportiva -->
+    <g transform="translate(54, 27) rotate(-15)">
+      <path d="M 0 -13 L 14 17 L 0 10 L -14 17 Z" fill="#090E17"/>
+      <path d="M 0 -11 L 12 15 L 0 9 L -12 15 Z" fill="#00E676"/>
+      <path d="M 0 -5 L 8 12 L 0 8 L -8 12 Z" fill="#FFFFFF"/>
+    </g>
+  </g>
 </svg>

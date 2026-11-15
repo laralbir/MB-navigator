@@ -105,7 +105,40 @@
 
 ---
 
-### 2.9. Registro Estadístico y Telemetría Histórica
+### 2.9. Arquitectura Multi-Agente y Subagentes Autónomos
+Para garantizar un rendimiento no bloqueante, alta resiliencia y procesamiento distribuido de eventos críticos en moto, la aplicación implementa una arquitectura completa basada en **Agentes y Subagentes Autónomos**:
+
+#### 2.9.1. Agente Coordinador Maestro (Master Navigation Coordinator Agent)
+- Orquesta el ciclo de vida de la sesión de navegación.
+- Fusiona los flujos asíncronos (`Kotlin Coroutine Channels` y `StateFlow`) provenientes de todos los subagentes.
+- Aplica políticas de arbitraje: las alertas de seguridad vial (DGT 3.0 / V16) y avisos meteorológicos críticos tienen prioridad estricta sobre la guía de voz convencional o consultas al copiloto IA.
+
+#### 2.9.2. Subagentes Especializados de Ejecución Concurrente
+1. **Subagente de Ruteo y Geometría Dinámica (`RoutingAgent`)**:
+   - Monitorea continuamente la posición GPS y calcula la desviación perpendicular respecto al trazado activo.
+   - Si la desviación supera los $30\text{ m}$, activa recálculo asíncrono con BRouter sin congelar la renderización ni la interfaz de usuario.
+   - Aplica perfiles específicos para motocicletas (`CURVY`, `EXTRA_CURVY`, `FAST_HIGHWAY`, `ADVENTURE_TRAIL`).
+2. **Subagente Centinela de Tráfico y Seguridad DGT 3.0 (`TrafficSentinelAgent`)**:
+   - Realiza polling inteligente de incidencias del Punto de Acceso Nacional (DATEX II / DGT 3.0).
+   - Ejecuta geofencing predictivo sobre los próximos 15 km de ruta para detectar balizas V16 activas, vehículos detenidos en curva ciega y obras de emergencia.
+   - Emite alertas con distancias relativas exactas (ej. *"🚨 A 250 m: Peligro en calzada"*).
+3. **Subagente de Meteorología Predictiva por Segmento (`PredictiveWeatherAgent`)**:
+   - Conecta con Open-Meteo y AEMET Meteoalerta.
+   - Interpola la hora estimada de llegada a cada segmento ($T_k$) y vigila peligros específicos de dos ruedas: rachas de viento lateral $> 45\text{ km/h}$, asfalto mojado en zonas de curvas y temperaturas $\le 3^\circ\text{C}$ propensas a placas de hielo negro.
+4. **Subagente Copiloto Conversacional Gemini (`GeminiCopilotAgent`)**:
+   - Procesa comandos de voz y consultas contextuales del motorista (manos libres a través de intercomunicador Bluetooth Cardo / Sena / Midland).
+   - Genera resúmenes ejecutivos de etapa y busca alternativas gastronómicas o paradas de repostaje optimizadas por curvas.
+5. **Subagente Gestor de Mapas y Almacenamiento Offline (`OfflineMapManagerAgent`)**:
+   - Gestiona descargas concurrentes de paquetes vectoriales (PMTiles / MBTiles) y grafos BRouter de cualquier país o región del mundo.
+   - Monitoriza el espacio libre en el almacenamiento interno (`StatFs`), calcula hashes SHA-256 de integridad y ofrece gestión completa de desinstalación para liberar espacio.
+6. **Subagente de Síntesis y Modulación de Voz TTS (`VoiceGuidanceAgent`)**:
+   - Administra la cola de prioridad auditiva, reduciendo temporalmente el volumen de música o intercomunicador para emitir instrucciones breves y claras con síntesis nativa offline.
+7. **Subagente de Telemetría y Dinámica de Marcha (`TelemetryDynamicsAgent`)**:
+   - Registra en Room DB las métricas cinemáticas del viaje: velocidad instantánea, medias, perfil altimétrico (+D / -D), tiempo en movimiento vs. detenido y condiciones ambientales encontradas para exportación GPX enriquecida.
+
+---
+
+### 2.10. Registro Estadístico y Telemetría Histórica
 - **RF-STATS-01 (Métricas Almacenadas en Room DB)**:
   - Distancia total recorrida y tiempo en movimiento vs. tiempo detenido.
   - Velocidad media, velocidad máxima y gráfica de velocidad a lo largo del tiempo.
@@ -171,3 +204,5 @@ data class TripTelemetryRecord(
 - [ ] `test_speed_exceeding_maxspeed_triggers_warning_according_to_configured_threshold`
 - [ ] `test_ai_module_falls_back_gracefully_when_gemini_api_key_is_absent`
 - [ ] `test_trip_telemetry_persists_correctly_to_room_and_exports_to_valid_gpx`
+- [ ] `test_offline_map_manager_agent_downloads_and_persists_packages_to_local_storage`
+- [ ] `test_multi_agent_coordinator_prioritizes_safety_alerts_over_conversational_copilot`
