@@ -3,6 +3,14 @@
 ## 1. Filosofía de Diseño
 La interfaz de `route-editor` (Flutter Desktop y Web) sigue un patrón de **espacio de trabajo GIS / CAD**, optimizado para el uso ágil del ratón, atajos de teclado y visualización simultánea del mapa y el perfil altimétrico.
 
+### Stack UI Seleccionado:
+- **Diseño y Componentes**: **`shadcn_ui` (Flutter)** para una estética desktop sobria, moderna y refinada.
+- **Iconografía**: **`lucide_icons`** (iconos vectoriales nítidos y coherentes).
+- **Layout Ajustable**: **`multi_split_view`** para paneles redimensionables con el ratón (sidebar y panel inferior altimétrico).
+- **Animaciones y Micro-interacciones**: **`flutter_animate`** y **`flutter_map_animations`** (transiciones de cámara cinemáticas y trazado láser de polilíneas).
+- **Entrada de Datos Nativa**: **`super_drag_and_drop`** para arrastrar archivos `.gpx`/`.kml` desde el explorador del sistema operativo al lienzo del mapa.
+- **Gráficos Altimétricos**: **`fl_chart`** con gradientes y tooltips interactivos.
+
 ---
 
 ## 2. Diagrama del Layout Principal (Desktop & Web Workspace)

@@ -1,10 +1,11 @@
 # Arquitectura y Template de UI: Android Navigator
 
 ## 1. Filosofía de Diseño
-La interfaz de navegación de `android-navigator` está diseñada con **Jetpack Compose (Material 3)** bajo tres premisas fundamentales:
-1. **Legibilidad extrema en exteriores**: Alto contraste, tipografía clara y adaptación automática a modo nocturno.
-2. **Operación ergonómica**: Controles principales accesibles en la zona inferior de la pantalla para uso con una sola mano.
-3. **Cero distracciones**: Priorizar la información crítica de maniobras sobre elementos decorativos.
+La interfaz de navegación de `android-navigator` está diseñada con **Jetpack Compose (Material 3)** con una estética deportiva de alta gama (estilo Garmin / Apple Watch Ultra), bajo tres premisas fundamentales:
+1. **Legibilidad extrema en exteriores**: Contraste OLED negro puro (`#000000`) con acentos de alta luminosidad (verde neón `#00E676`, naranja `#FF6D00` y cian `#00E5FF`).
+2. **Glassmorphism translúcido**: Integración de **Haze** para desenfoque en tiempo real (*frosted glass*) sobre el mapa en movimiento.
+3. **Micro-animaciones vectoriales con Lottie**: Integración de **Lottie Compose** para transiciones fluidas de giros, búsqueda de satélites y alertas sin bloquear el renderizado del mapa.
+4. **Tipografía técnica de instrumentación**: Uso de fuentes monoespaciadas (JetBrains Mono / Geist Mono) para telemetría (velocidad, altitud, distancia, rumbo).
 
 ---
 
@@ -36,10 +37,14 @@ La interfaz de navegación de `android-navigator` está diseñada con **Jetpack 
 
 ### `TurnByTurnHUD`
 - **Ubicación**: Anclado en la parte superior (`Alignment.TopCenter`).
+- **Animaciones Lottie (`LottieAnimation`)**:
+  - `turn_maneuver.json`: Animación vectorial dinámica del giro según la distancia decreciente.
+  - `gps_searching_radar.json`: Radar orbital animado durante la adquisición inicial de satélites GPS.
+  - `off_route_pulse.json`: Pulso sutil de advertencia en caso de desvío del track.
 - **Estados**:
-  - `ManeuverActive`: Muestra icono SVG de giro, distancia restante en metros/km y nombre de calle.
+  - `ManeuverActive`: Muestra icono vectorial animado con Lottie, distancia decreciente en metros/km y nombre de calle.
   - `Recalculating`: Indicador visual cuando el usuario se sale del track planificado por BRouter.
-  - `Arrival`: Pantalla de destino alcanzado.
+  - `Arrival`: Celebración y resumen al alcanzar el destino.
 
 ### `FloatingControls`
 - **Columna lateral derecha**:
