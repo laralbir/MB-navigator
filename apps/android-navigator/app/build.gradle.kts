@@ -99,6 +99,10 @@ dependencies {
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
 
+  // Android Auto (Car App Library)
+  implementation(libs.androidx.car.app)
+  implementation(libs.androidx.car.app.projected)
+
   // Maps (OpenStreetMap / Offline SQLite Tiles)
   implementation(libs.osmdroid.android)
 }

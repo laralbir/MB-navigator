@@ -1,11 +1,13 @@
 package org.mbnavigator.android.core.routing
 
+import androidx.car.app.navigation.model.Maneuver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mbnavigator.android.auto.CarIconFactory
 import org.mbnavigator.android.core.location.LocationStabilizer
 import org.mbnavigator.android.core.model.GeoPoint
 import org.mbnavigator.android.core.settings.AppPreferencesManager
@@ -291,5 +293,20 @@ class NavigationFeaturesTest {
         assertTrue(progressed.moved)
         assertEquals(40.41710, progressed.location.latitude, 0.000001)
         assertEquals(45f, progressed.location.bearingDegrees ?: -1f, 0.01f)
+    }
+
+    @Test
+    fun `car icon factory maps every maneuver type to valid Android Auto maneuver constant`() {
+        assertEquals(Maneuver.TYPE_DEPART, CarIconFactory.toCarManeuverType(ManeuverType.DEPART))
+        assertEquals(Maneuver.TYPE_DESTINATION, CarIconFactory.toCarManeuverType(ManeuverType.ARRIVE))
+        assertEquals(Maneuver.TYPE_TURN_NORMAL_LEFT, CarIconFactory.toCarManeuverType(ManeuverType.LEFT))
+        assertEquals(Maneuver.TYPE_TURN_SLIGHT_LEFT, CarIconFactory.toCarManeuverType(ManeuverType.SLIGHT_LEFT))
+        assertEquals(Maneuver.TYPE_TURN_SHARP_LEFT, CarIconFactory.toCarManeuverType(ManeuverType.SHARP_LEFT))
+        assertEquals(Maneuver.TYPE_TURN_NORMAL_RIGHT, CarIconFactory.toCarManeuverType(ManeuverType.RIGHT))
+        assertEquals(Maneuver.TYPE_TURN_SLIGHT_RIGHT, CarIconFactory.toCarManeuverType(ManeuverType.SLIGHT_RIGHT))
+        assertEquals(Maneuver.TYPE_TURN_SHARP_RIGHT, CarIconFactory.toCarManeuverType(ManeuverType.SHARP_RIGHT))
+        assertEquals(Maneuver.TYPE_U_TURN_LEFT, CarIconFactory.toCarManeuverType(ManeuverType.U_TURN))
+        assertEquals(Maneuver.TYPE_ROUNDABOUT_ENTER_AND_EXIT_CCW, CarIconFactory.toCarManeuverType(ManeuverType.ROUNDABOUT))
+        assertEquals(Maneuver.TYPE_STRAIGHT, CarIconFactory.toCarManeuverType(ManeuverType.STRAIGHT))
     }
 }
