@@ -1,7 +1,6 @@
 package org.mbnavigator.android.ui.theme
 
 import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -10,10 +9,11 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import org.mbnavigator.android.core.settings.AppPreferencesManager
-import org.mbnavigator.android.core.settings.AppThemeMode
+import org.mbnavigator.android.core.location.RealLocationTracker
+import org.mbnavigator.android.core.settings.rememberIsDarkModeActive
 
 private val DarkColorScheme = darkColorScheme(
     primary = primaryDark,
@@ -66,17 +66,13 @@ fun MBNavigatorTheme(
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val mode by AppPreferencesManager.themeMode.collectAsState()
-    val systemDark = isSystemInDarkTheme()
-    val darkTheme = when (mode) {
-        AppThemeMode.LIGHT -> false
-        AppThemeMode.DARK -> true
-        AppThemeMode.AUTO -> systemDark
-    }
+    val context = LocalContext.current
+    val tracker = remember(context) { RealLocationTracker.getInstance(context) }
+    val currentLocation by tracker.currentLocation.collectAsState()
+    val darkTheme = rememberIsDarkModeActive(currentLocation)
 
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
         darkTheme -> DarkColorScheme

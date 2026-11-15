@@ -1,6 +1,9 @@
 package org.mbnavigator.android.ui.routes
 
+import android.content.Intent
 import android.net.Uri
+import androidx.core.content.FileProvider
+import org.mbnavigator.android.core.location.RealLocationTracker
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -50,7 +53,9 @@ fun RoutesScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val palette = rememberNavigatorPalette()
+    val tracker = remember { RealLocationTracker.getInstance(context) }
+    val realLocation by tracker.currentLocation.collectAsState()
+    val palette = rememberNavigatorPalette(realLocation)
 
     LaunchedEffect(Unit) {
         NavigationSessionRepository.ensureInitialized(context)
@@ -223,11 +228,11 @@ fun RoutesScreen(
                                 colors = ButtonDefaults.buttonColors(containerColor = palette.primary),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier
-                                    .weight(1.5f)
+                                    .weight(1.4f)
                                     .height(48.dp)
                             ) {
                                 Text(
-                                    text = "▶ Navegar GPS",
+                                    text = "▶ Navegar",
                                     color = palette.onPrimary,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp
@@ -246,6 +251,36 @@ fun RoutesScreen(
                                     .height(48.dp)
                             ) {
                                 Text("👁️ Previo", color = palette.secondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    runCatching {
+                                        val gpxFile = NavigationSessionRepository.exportRouteToShareableGpxFile(context, route)
+                                        val shareUri = FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.fileprovider",
+                                            gpxFile
+                                        )
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "application/gpx+xml"
+                                            putExtra(Intent.EXTRA_STREAM, shareUri)
+                                            putExtra(Intent.EXTRA_SUBJECT, "${route.title}.gpx")
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(
+                                            Intent.createChooser(shareIntent, "Compartir ruta GPX: ${route.title}")
+                                        )
+                                    }.onFailure { err ->
+                                        importFeedback = false to "⚠️ No se pudo compartir GPX: ${err.message}"
+                                    }
+                                },
+                                border = BorderStroke(1.dp, palette.border),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .height(48.dp)
+                            ) {
+                                Text("📤", fontSize = 16.sp)
                             }
                         }
                     }

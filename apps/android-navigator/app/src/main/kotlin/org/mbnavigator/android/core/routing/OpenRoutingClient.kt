@@ -7,6 +7,8 @@ import org.mbnavigator.android.core.geo.ElevationMetricsCalculator
 import org.mbnavigator.android.core.geo.HaversineDistanceCalculator
 import org.mbnavigator.android.core.model.GeoPoint
 import org.mbnavigator.android.core.model.Waypoint
+import org.mbnavigator.android.core.settings.RouteCalculationOptions
+import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -63,22 +65,30 @@ object OpenRoutingClient {
     }
 
     /**
-     * Calcula una ruta real por carreteras usando OSRM abierto con instrucciones paso a paso,
-     * waypoints intermedios obligatorios y fallback geométrico offline si no hay conexión.
+     * Calcula una ruta real por carreteras usando Valhalla (`costing: motorcycle`) respetando
+     * preferencias reales (autovía, peajes, ferris, caminos sin asfaltar), con respaldo OSRM y offline.
      */
     suspend fun calculateRoadRoute(
         origin: GeoPoint,
         destination: GeoPoint,
         destinationName: String,
         viaPoints: List<Waypoint> = emptyList(),
-        profile: MotorcycleRoutingProfile = MotorcycleRoutingProfile.CURVY
+        profile: MotorcycleRoutingProfile = MotorcycleRoutingProfile.CURVY,
+        options: RouteCalculationOptions = RouteCalculationOptions()
     ): CalculatedRouteResult = withContext(Dispatchers.IO) {
+        val allStops = buildList {
+            add(origin)
+            viaPoints.forEach { add(it.point) }
+            add(destination)
+        }
+
+        // 1) Motor Valhalla (soporta costing=motorcycle + use_highways/tolls/ferry/trails)
+        tryValhallaMotorcycleRoute(allStops, destinationName, profile, options)?.let {
+            return@withContext it
+        }
+
+        // 2) Fallback OSRM público si Valhalla no responde
         try {
-            val allStops = buildList {
-                add(origin)
-                viaPoints.forEach { add(it.point) }
-                add(destination)
-            }
             val coordsParam = allStops.joinToString(";") { "${it.longitude},${it.latitude}" }
             val urlStr = "https://router.project-osrm.org/route/v1/driving/$coordsParam?overview=full&geometries=geojson&steps=true"
 
@@ -120,22 +130,191 @@ object OpenRoutingClient {
             // Caída limpia a cálculo offline si no hay red
         }
 
-        // Fallback offline cuando no hay red disponible
-        val fallbackPoints = buildList {
-            add(origin)
-            viaPoints.forEach { add(it.point) }
-            add(destination)
-        }
-        val distMeters = HaversineDistanceCalculator.totalDistanceMeters(fallbackPoints)
-        val maneuvers = TurnByTurnEngine.extractManeuversFromTrack(fallbackPoints, destinationName)
+        // 3) Fallback offline cuando no hay red disponible
+        val distMeters = HaversineDistanceCalculator.totalDistanceMeters(allStops)
+        val maneuvers = TurnByTurnEngine.extractManeuversFromTrack(allStops, destinationName)
         CalculatedRouteResult(
             title = "Ruta Directa (Offline) a $destinationName",
-            points = fallbackPoints,
+            points = allStops,
             maneuvers = maneuvers,
             distanceKm = distMeters / 1000.0,
             estimatedMinutes = ((distMeters / 1000.0) / 65.0 * 60.0).toInt().coerceAtLeast(1),
             isOnlineRoute = false
         )
+    }
+
+    private fun tryValhallaMotorcycleRoute(
+        stops: List<GeoPoint>,
+        destinationName: String,
+        profile: MotorcycleRoutingProfile,
+        options: RouteCalculationOptions
+    ): CalculatedRouteResult? {
+        return try {
+            val locationsArr = org.json.JSONArray()
+            stops.forEach { pt ->
+                locationsArr.put(
+                    JSONObject().apply {
+                        put("lat", pt.latitude)
+                        put("lon", pt.longitude)
+                    }
+                )
+            }
+
+            val highwayPref = when {
+                !options.allowHighways -> 0.0
+                profile == MotorcycleRoutingProfile.FAST_HIGHWAY -> 1.0
+                profile == MotorcycleRoutingProfile.EXTRA_CURVY_SCENIC -> 0.15
+                else -> 0.35
+            }
+            val motoOpts = JSONObject().apply {
+                put("use_highways", highwayPref)
+                put("use_tolls", if (options.allowTolls) 0.9 else 0.0)
+                put("use_ferry", if (options.allowFerries) 0.85 else 0.0)
+                put("use_trails", if (options.allowUnpavedTracks) 0.85 else 0.0)
+            }
+
+            val payload = JSONObject().apply {
+                put("locations", locationsArr)
+                put("costing", "motorcycle")
+                put("costing_options", JSONObject().apply { put("motorcycle", motoOpts) })
+                put("language", "es-ES")
+                put("directions_options", JSONObject().apply { put("units", "kilometers") })
+            }
+
+            val conn = (URL("https://valhalla1.openstreetmap.de/route").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("User-Agent", "MBNavigator-MotoGPS/1.0")
+                setRequestProperty("Content-Type", "application/json")
+                doOutput = true
+                connectTimeout = 9000
+                readTimeout = 9000
+            }
+            OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
+                writer.write(payload.toString())
+            }
+
+            if (conn.responseCode != 200) return null
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            val trip = JSONObject(body).optJSONObject("trip") ?: return null
+            val legs = trip.optJSONArray("legs") ?: return null
+            if (legs.length() == 0) return null
+
+            val combinedPoints = mutableListOf<GeoPoint>()
+            val combinedManeuvers = mutableListOf<RouteManeuver>()
+            var totalDistKm = 0.0
+            var totalDurationSec = 0.0
+
+            for (i in 0 until legs.length()) {
+                val leg = legs.getJSONObject(i)
+                val summary = leg.optJSONObject("summary")
+                totalDistKm += summary?.optDouble("length", 0.0) ?: 0.0
+                totalDurationSec += summary?.optDouble("time", 0.0) ?: 0.0
+
+                val shapeStr = leg.optString("shape", "")
+                val legPoints = decodePolyline6(shapeStr)
+                val pointOffset = if (combinedPoints.isEmpty()) 0 else (combinedPoints.size - 1)
+                if (combinedPoints.isEmpty()) {
+                    combinedPoints.addAll(legPoints)
+                } else if (legPoints.size > 1) {
+                    combinedPoints.addAll(legPoints.drop(1))
+                }
+
+                val maneuversArr = leg.optJSONArray("maneuvers") ?: continue
+                for (m in 0 until maneuversArr.length()) {
+                    val mObj = maneuversArr.getJSONObject(m)
+                    val beginIdx = (pointOffset + mObj.optInt("begin_shape_index", 0))
+                        .coerceIn(0, (combinedPoints.size - 1).coerceAtLeast(0))
+                    val loc = combinedPoints.getOrElse(beginIdx) { stops.first() }
+                    val valType = mObj.optInt("type", 0)
+                    val mType = mapValhallaManeuverType(valType)
+                    val streetArr = mObj.optJSONArray("street_names")
+                    val streetName = if (streetArr != null && streetArr.length() > 0) streetArr.optString(0, "") else ""
+                    val instruction = mObj.optString("instruction", "Continúa").trim()
+                    val distCumulative = TurnByTurnEngine.computeCumulativeDistances(combinedPoints)
+                        .getOrElse(beginIdx) { 0.0 }
+
+                    combinedManeuvers.add(
+                        RouteManeuver(
+                            index = combinedManeuvers.size,
+                            pointIndex = beginIdx,
+                            location = loc,
+                            type = mType,
+                            instruction = instruction,
+                            roadName = streetName,
+                            distanceFromStartMeters = distCumulative
+                        )
+                    )
+                }
+            }
+
+            if (combinedPoints.size < 2) return null
+
+            CalculatedRouteResult(
+                title = "Ruta a $destinationName",
+                points = combinedPoints,
+                maneuvers = combinedManeuvers.ifEmpty {
+                    TurnByTurnEngine.extractManeuversFromTrack(combinedPoints, destinationName)
+                },
+                distanceKm = if (totalDistKm > 0.0) totalDistKm else HaversineDistanceCalculator.totalDistanceMeters(combinedPoints) / 1000.0,
+                estimatedMinutes = (totalDurationSec / 60.0).toInt().coerceAtLeast(1),
+                isOnlineRoute = true
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    internal fun decodePolyline6(encoded: String): List<GeoPoint> {
+        if (encoded.isEmpty()) return emptyList()
+        val points = mutableListOf<GeoPoint>()
+        var index = 0
+        val len = encoded.length
+        var lat = 0
+        var lon = 0
+
+        while (index < len) {
+            var b: Int
+            var shift = 0
+            var result = 0
+            do {
+                if (index >= len) break
+                b = encoded[index++].code - 63
+                result = result or ((b and 0x1f) shl shift)
+                shift += 5
+            } while (b >= 0x20)
+            val dLat = if ((result and 1) != 0) (result shr 1).inv() else (result shr 1)
+            lat += dLat
+
+            shift = 0
+            result = 0
+            do {
+                if (index >= len) break
+                b = encoded[index++].code - 63
+                result = result or ((b and 0x1f) shl shift)
+                shift += 5
+            } while (b >= 0x20)
+            val dLon = if ((result and 1) != 0) (result shr 1).inv() else (result shr 1)
+            lon += dLon
+
+            points.add(GeoPoint(lat / 1_000_000.0, lon / 1_000_000.0))
+        }
+        return points
+    }
+
+    private fun mapValhallaManeuverType(typeCode: Int): ManeuverType {
+        return when (typeCode) {
+            1, 2, 3 -> ManeuverType.DEPART
+            4, 5, 6 -> ManeuverType.ARRIVE
+            10 -> ManeuverType.RIGHT
+            9 -> ManeuverType.SLIGHT_RIGHT
+            11 -> ManeuverType.SHARP_RIGHT
+            15 -> ManeuverType.LEFT
+            16 -> ManeuverType.SLIGHT_LEFT
+            14 -> ManeuverType.SHARP_LEFT
+            12, 13 -> ManeuverType.U_TURN
+            26, 27 -> ManeuverType.ROUNDABOUT
+            else -> ManeuverType.STRAIGHT
+        }
     }
 
     private fun parseOsrmManeuvers(

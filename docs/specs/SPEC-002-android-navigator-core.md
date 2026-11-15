@@ -160,7 +160,20 @@ Para garantizar un rendimiento no bloqueante, alta resiliencia y procesamiento d
   - La gestión de descarga de mapas offline es accesible exclusivamente desde la sección de Mapas dentro de Ajustes.
   - Navegación jerárquica de mayor a menor detalle (`Continente -> País -> Región`) con descarga masiva por país o continente completo, control de versiones instaladas con detección de actualizaciones y bloqueo opcional mediante preferencia **Solo Wi-Fi** frente a datos móviles.
 - **RF-THEME-01 (Tema Claro/Oscuro y Estilos de Mapa a Color)**:
-  - Configuración persistente de apariencia de interfaz (`Claro`, `Oscuro`, `Automático`) junto con selección múltiple de paletas cartográficas a color (Voyager, OSM Clásico, Topográfico, Minimal y Nocturno) y color del trazado de ruta.
+  - Configuración persistente de apariencia de interfaz (**Sistema / Sensor y Android Auto**, **Horas Crepusculares por posición GPS**, **Claro** y **Oscuro**), con cambio automático opcional del mapa al estilo nocturno al anochecer, múltiples paletas cartográficas a color (OSM Clásico, Pastel Suave, Rutas y Puertos, Topográfico y Nocturno Azul) y color del trazado de ruta.
+- **RF-NAV-CTRL-01 (Ciclo de Vida de Navegación, Menú Hamburguesa y Barra Android)**:
+  - Controles explícitos en pantalla para **Iniciar**, **Pausar**, **Reanudar** y **Parar** la navegación guiada; al entrar en navegación activa o en pausa, las pestañas inferiores se contraen a un **menú hamburguesa lateral (`☰`)** para maximizar el área visible del mapa.
+  - Barra inferior de navegación del sistema Android con recorte estricto de viewport y modo configurable entre **Barra fija visible** o **Ocultación automática con gestos**.
+- **RF-NAV-MOTION-01 (Orientación, Zoom por Velocidad y Recálculo Automático)**:
+  - Rotación del mapa seleccionable en Ajustes y con acceso rápido sobre el mapa entre **Norte arriba** y **Seguimiento de dirección de marcha (Course-Up)**.
+  - **Zoom dinámico según velocidad GPS**: mayor detalle en entorno urbano o curvas lentas y mayor anticipación a velocidades de carretera/autopista, con margen tras ajuste manual.
+  - **Recálculo automático en marcha**: ante un desvío confirmado de la ruta activa durante la conducción real, la app recalcula la trayectoria respetando las preferencias de vía configuradas y las anuncia por voz sin bloquear al usuario.
+- **RF-ROUTE-OPTS-01 (Preferencias de Vía, Favoritos y Compartición GPX)**:
+  - Selector de criterios al calcular una ruta con destino: permitir o evitar **autovías/autopistas**, **peajes**, **ferries** y **caminos sin asfaltar**.
+  - Gestión persistente de **destinos favoritos** (**Casa**, **Trabajo** y ubicaciones personalizadas) accesibles en un toque desde Ajustes y la búsqueda de destinos.
+  - **Compartición bidireccional de GPX/KML/GeoJSON**: apertura directa o mediante la hoja *Compartir* del sistema (`ACTION_VIEW` / `ACTION_SEND`) cargando la ruta sobre el mapa lista para iniciar, y exportación/compartición de rutas guardadas hacia otras apps mediante `FileProvider`.
+- **RF-TRAFFIC-DGT-01 (Capa Visual de Densidad de Tráfico por Colores)**:
+  - Capa activable de tráfico e incidencias en tiempo real basada en fuentes abiertas (DATEX II v3.6 de la DGT) representada mediante código cromático (**Verde** fluido, **Ámbar** denso, **Naranja** intenso y **Rojo** retención/corte) sobre la ruta y su entorno cercano.
 
 ---
 
@@ -168,7 +181,7 @@ Para garantizar un rendimiento no bloqueante, alta resiliencia y procesamiento d
 - **RF-UX-M3-01 (Reglas Tonales, Suavidad y Accesibilidad)**:
   - Todas las pantallas de navegación, rutas, mapas, diagnóstico GNSS y ajustes siguen estrictamente la especificación **Material Design 3** (`https://m3.material.io/`).
   - Paleta cromática basada en colores amables, suaves y equilibrados (familia principal **Azul Océano / Cielo M3** `#00506E` / `#87CFF9`, secundario azul pizarra suave `#23759B` / `#B0CADC` y acento terciario lavanda `#613A73` / `#E6B5F8`), evitando estéticas monocromas de alto contraste agresivo y prohibiendo el uso de marrón como color principal.
-  - Superficies tonales graduadas (`surface`, `surfaceContainerLow`, `surfaceContainer`, `outlineVariant`), radios consistentes (`10–18 dp`), contraste mínimo WCAG AA en textos sobre fondo claro u oscuro y objetivos táctiles cómodos ($\ge 48\text{ dp}$).
+  - Superficies tonales graduadas con tarjetas flotantes redondeadas (`14–20 dp`), elevación suave, contraste mínimo WCAG AA en textos sobre fondo claro u oscuro y objetivos táctiles cómodos ($\ge 48\text{ dp}$).
 
 ---
 

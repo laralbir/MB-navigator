@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -62,10 +62,10 @@ fun GpsSatellitesScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val palette = rememberNavigatorPalette()
     val tracker = remember { RealLocationTracker.getInstance(context) }
 
     val location by tracker.currentLocation.collectAsState()
+    val palette = rememberNavigatorPalette(location)
     val hasGpsFix by tracker.hasGpsFix.collectAsState()
     val gnss by tracker.gnssSummary.collectAsState()
     var hasPermission by remember { mutableStateOf(tracker.hasPermission()) }
@@ -329,7 +329,12 @@ fun GpsSatellitesScreen(
                     }
                 }
             } else {
-                items(gnss.satellites, key = { "${it.constellation.name}-${it.svid}" }) { sat ->
+                itemsIndexed(
+                    items = gnss.satellites,
+                    key = { index, sat ->
+                        "${sat.constellation.name}-${sat.svid}-$index"
+                    }
+                ) { _, sat ->
                     SatelliteRow(sat, palette)
                 }
             }

@@ -42,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,12 +52,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import org.mbnavigator.android.core.routing.OpenRoutingClient
 import org.mbnavigator.android.core.settings.AppPreferencesManager
 import org.mbnavigator.android.core.settings.AppThemeMode
+import org.mbnavigator.android.core.settings.FavoriteDestination
+import org.mbnavigator.android.core.settings.FavoritePlaceCategory
 import org.mbnavigator.android.core.settings.MapColorStyle
+import org.mbnavigator.android.core.settings.MapOrientationMode
 import org.mbnavigator.android.core.settings.NavigatorPalette
 import org.mbnavigator.android.core.settings.RouteTrackColor
+import org.mbnavigator.android.core.settings.SystemNavBarMode
 import org.mbnavigator.android.core.settings.rememberNavigatorPalette
+import org.mbnavigator.android.core.location.RealLocationTracker
 import org.mbnavigator.android.core.voice.AndroidTextToSpeechService
 import org.mbnavigator.android.core.voice.VoiceVerbosityLevel
 import org.mbnavigator.android.ui.maps.OfflineMapsScreen
@@ -77,13 +85,23 @@ fun SettingsScreen(
     }
 
     val context = LocalContext.current
-    val palette = rememberNavigatorPalette()
+    val scope = rememberCoroutineScope()
+    val tracker = remember { RealLocationTracker.getInstance(context) }
+    val currentLocation by tracker.currentLocation.collectAsState()
+    val palette = rememberNavigatorPalette(currentLocation)
     val ttsService = remember { AndroidTextToSpeechService(context) }
+    val favorites by AppPreferencesManager.favoriteDestinations.collectAsState()
 
     val themeMode by AppPreferencesManager.themeMode.collectAsState()
     val mapStyle by AppPreferencesManager.mapStyle.collectAsState()
     val routeColor by AppPreferencesManager.routeColor.collectAsState()
     val wifiOnly by AppPreferencesManager.wifiOnlyDownloads.collectAsState()
+    val systemNavBarMode by AppPreferencesManager.systemNavBarMode.collectAsState()
+    val autoNightMap by AppPreferencesManager.autoNightMapEnabled.collectAsState()
+    val mapOrientationMode by AppPreferencesManager.mapOrientationMode.collectAsState()
+    val speedAutoZoom by AppPreferencesManager.speedAutoZoomEnabled.collectAsState()
+    val trafficLayerEnabled by AppPreferencesManager.trafficLayerEnabled.collectAsState()
+    val autoRecalcEnabled by AppPreferencesManager.autoRecalculateEnabled.collectAsState()
 
     DisposableEffect(Unit) {
         onDispose {
@@ -98,6 +116,8 @@ fun SettingsScreen(
     var speedCameraAlertsEnabled by remember { mutableStateOf(true) }
     var geminiAiEnabled by remember { mutableStateOf(false) }
     var geminiApiKey by remember { mutableStateOf("") }
+    var favSearchQuery by remember { mutableStateOf("") }
+    var favFeedback by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
@@ -168,9 +188,52 @@ fun SettingsScreen(
                     onCheckedChange = { AppPreferencesManager.setWifiOnlyDownloads(it) }
                 )
 
-                // Selector Tono Claro / Oscuro / Auto
+                // Selector Tono Claro / Oscuro / Sensor / Crepúsculo
                 Text(
-                    text = "Tema Visual de la Interfaz",
+                    text = "Modo Día / Noche Automático",
+                    color = palette.textPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppThemeMode.entries.chunked(2).forEach { rowModes ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rowModes.forEach { mode ->
+                                SelectableOptionPill(
+                                    title = "${mode.icon} ${mode.label}",
+                                    isSelected = themeMode == mode,
+                                    palette = palette,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { AppPreferencesManager.setThemeMode(mode) }
+                                )
+                            }
+                        }
+                    }
+                }
+                Text(
+                    text = when (themeMode) {
+                        AppThemeMode.SYSTEM_SENSOR -> "Sigue el sensor del dispositivo y Android Auto."
+                        AppThemeMode.TWILIGHT_HOURS -> "Cambia automáticamente según amanecer y ocaso solar de tu posición GPS."
+                        AppThemeMode.LIGHT -> "Interfaz siempre en modo día luminoso."
+                        AppThemeMode.DARK -> "Interfaz siempre en modo nocturno suave."
+                    },
+                    color = palette.textSecondary,
+                    fontSize = 12.sp
+                )
+
+                SettingsToggleRow(
+                    title = "Mapa Nocturno automático al anochecer",
+                    subtitle = if (autoNightMap) "Pasa el mapa a tono pizarra azulada en modo noche" else "Mantiene siempre el estilo de mapa elegido",
+                    checked = autoNightMap,
+                    palette = palette,
+                    onCheckedChange = { AppPreferencesManager.setAutoNightMapEnabled(it) }
+                )
+
+                Text(
+                    text = "Barra Inferior de Android",
                     color = palette.textPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
@@ -179,16 +242,71 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    AppThemeMode.entries.forEach { mode ->
+                    SystemNavBarMode.entries.forEach { mode ->
                         SelectableOptionPill(
-                            title = "${mode.icon} ${mode.label}",
-                            isSelected = themeMode == mode,
+                            title = mode.label,
+                            isSelected = systemNavBarMode == mode,
                             palette = palette,
                             modifier = Modifier.weight(1f),
-                            onClick = { AppPreferencesManager.setThemeMode(mode) }
+                            onClick = { AppPreferencesManager.setSystemNavBarMode(mode) }
                         )
                     }
                 }
+                Text(
+                    text = systemNavBarMode.description,
+                    color = palette.textSecondary,
+                    fontSize = 12.sp
+                )
+
+                Text(
+                    text = "Orientación del Mapa en Navegación",
+                    color = palette.textPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    MapOrientationMode.entries.forEach { mode ->
+                        SelectableOptionPill(
+                            title = mode.shortLabel,
+                            isSelected = mapOrientationMode == mode,
+                            palette = palette,
+                            modifier = Modifier.weight(1f),
+                            onClick = { AppPreferencesManager.setMapOrientationMode(mode) }
+                        )
+                    }
+                }
+                Text(
+                    text = mapOrientationMode.description,
+                    color = palette.textSecondary,
+                    fontSize = 12.sp
+                )
+
+                SettingsToggleRow(
+                    title = "Zoom automático según velocidad",
+                    subtitle = if (speedAutoZoom) "Acerca el mapa en ciudad (<25 km/h) y amplía vista en carretera (>90 km/h)" else "Zoom manual fijo sin escalado por velocidad",
+                    checked = speedAutoZoom,
+                    palette = palette,
+                    onCheckedChange = { AppPreferencesManager.setSpeedAutoZoomEnabled(it) }
+                )
+
+                SettingsToggleRow(
+                    title = "Capa de densidad de tráfico por colores",
+                    subtitle = if (trafficLayerEnabled) "Muestra retenciones e incidencias reales DGT en verde, ámbar, naranja y rojo" else "Ocultar capa visual de tráfico",
+                    checked = trafficLayerEnabled,
+                    palette = palette,
+                    onCheckedChange = { AppPreferencesManager.setTrafficLayerEnabled(it) }
+                )
+
+                SettingsToggleRow(
+                    title = "Recálculo automático fuera de ruta",
+                    subtitle = if (autoRecalcEnabled) "Recalcula en marcha si te desvías del recorrido activo" else "Solo muestra aviso sin recalcular automáticamente",
+                    checked = autoRecalcEnabled,
+                    palette = palette,
+                    onCheckedChange = { AppPreferencesManager.setAutoRecalculateEnabled(it) }
+                )
 
                 // Selector Estilo / Color de Mapa
                 Text(
@@ -475,7 +593,155 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // -----------------------------------------------------------------
-        // 4. SEGURIDAD VIAL, TRÁFICO Y DGT 3.0
+        // 4. DESTINOS FAVORITOS (CASA, TRABAJO, PERSONALIZADOS)
+        // -----------------------------------------------------------------
+        SectionTitle("DESTINOS FAVORITOS", palette)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = palette.surface),
+            border = BorderStroke(1.dp, palette.border),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Configura Casa, Trabajo o puntos frecuentes para navegar en un toque",
+                    color = palette.textSecondary,
+                    fontSize = 12.sp
+                )
+                OutlinedTextField(
+                    value = favSearchQuery,
+                    onValueChange = { favSearchQuery = it },
+                    label = { Text("Nombre o dirección del destino") },
+                    placeholder = { Text("Ej: Casa, Taller Moto, Morella...") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = palette.textPrimary,
+                        unfocusedTextColor = palette.textPrimary,
+                        focusedBorderColor = palette.primary,
+                        unfocusedBorderColor = palette.border
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FavoritePlaceCategory.entries.forEach { cat ->
+                        OutlinedButton(
+                            onClick = {
+                                val loc = currentLocation
+                                val query = favSearchQuery.trim()
+                                scope.launch {
+                                    if (query.isNotBlank()) {
+                                        val res = OpenRoutingClient.searchDestination(query)
+                                        val first = res.getOrNull()?.firstOrNull()
+                                        if (first != null) {
+                                            val favId = when (cat) {
+                                                FavoritePlaceCategory.HOME -> "fav_home"
+                                                FavoritePlaceCategory.WORK -> "fav_work"
+                                                FavoritePlaceCategory.CUSTOM -> "fav_${System.currentTimeMillis()}"
+                                            }
+                                            AppPreferencesManager.saveFavoriteDestination(
+                                                FavoriteDestination(
+                                                    id = favId,
+                                                    name = if (cat == FavoritePlaceCategory.CUSTOM) first.shortName else cat.label,
+                                                    category = cat,
+                                                    address = first.displayName,
+                                                    latitude = first.location.latitude,
+                                                    longitude = first.location.longitude
+                                                )
+                                            )
+                                            favFeedback = "✓ Guardado ${cat.icon} ${first.shortName}"
+                                            favSearchQuery = ""
+                                            return@launch
+                                        }
+                                    }
+                                    if (loc != null) {
+                                        val favId = when (cat) {
+                                            FavoritePlaceCategory.HOME -> "fav_home"
+                                            FavoritePlaceCategory.WORK -> "fav_work"
+                                            FavoritePlaceCategory.CUSTOM -> "fav_${System.currentTimeMillis()}"
+                                        }
+                                        val labelName = if (cat == FavoritePlaceCategory.CUSTOM && query.isNotBlank()) query else cat.label
+                                        AppPreferencesManager.saveFavoriteDestination(
+                                            FavoriteDestination(
+                                                id = favId,
+                                                name = labelName,
+                                                category = cat,
+                                                address = "Posición GPS actual",
+                                                latitude = loc.latitude,
+                                                longitude = loc.longitude
+                                            )
+                                        )
+                                        favFeedback = "✓ Guardado en GPS actual: ${cat.icon} $labelName"
+                                        favSearchQuery = ""
+                                    } else {
+                                        favFeedback = "⚠️ Escribe una dirección o activa GPS para guardar."
+                                    }
+                                }
+                            },
+                            border = BorderStroke(1.dp, palette.primary),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = "+ ${cat.icon} ${cat.label}",
+                                color = palette.primary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+                favFeedback?.let { msg ->
+                    Text(msg, color = palette.primary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
+                favorites.forEach { fav ->
+                    Surface(
+                        color = palette.surfaceAlt,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, palette.border),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "${fav.category.icon} ${fav.name}",
+                                    color = palette.textPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = fav.address.ifBlank { "${fav.latitude}, ${fav.longitude}" },
+                                    color = palette.textSecondary,
+                                    fontSize = 11.sp,
+                                    maxLines = 1
+                                )
+                            }
+                            Text(
+                                text = "✕",
+                                color = palette.danger,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .clickable { AppPreferencesManager.removeFavoriteDestination(fav.id) }
+                                    .padding(6.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // -----------------------------------------------------------------
+        // 5. SEGURIDAD VIAL, TRÁFICO Y DGT 3.0
         // -----------------------------------------------------------------
         SectionTitle("SEGURIDAD VIAL Y TRÁFICO", palette)
         Card(

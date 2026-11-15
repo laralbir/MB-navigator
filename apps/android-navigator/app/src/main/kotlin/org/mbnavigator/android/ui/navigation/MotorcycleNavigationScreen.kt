@@ -15,6 +15,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -48,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -58,6 +61,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,14 +79,23 @@ import org.mbnavigator.android.core.routing.GeocodedPlace
 import org.mbnavigator.android.core.routing.GpxKmlParser
 import org.mbnavigator.android.core.routing.LiveNavigationProgress
 import org.mbnavigator.android.core.routing.MotorcycleRoutingProfile
+import org.mbnavigator.android.core.routing.NavigationDisplayCalculator
+import org.mbnavigator.android.core.routing.NavigationRunState
 import org.mbnavigator.android.core.routing.NavigationSessionRepository
 import org.mbnavigator.android.core.routing.OpenRoutingClient
 import org.mbnavigator.android.core.routing.SavedRouteEntry
+import org.mbnavigator.android.core.routing.TrafficDensityClient
+import org.mbnavigator.android.core.routing.TrafficIncidentPoint
 import org.mbnavigator.android.core.routing.TurnByTurnEngine
 import org.mbnavigator.android.core.settings.AppPreferencesManager
+import org.mbnavigator.android.core.settings.FavoriteDestination
+import org.mbnavigator.android.core.settings.FavoritePlaceCategory
 import org.mbnavigator.android.core.settings.MapColorStyle
+import org.mbnavigator.android.core.settings.MapOrientationMode
 import org.mbnavigator.android.core.settings.NavigatorPalette
+import org.mbnavigator.android.core.settings.RouteCalculationOptions
 import org.mbnavigator.android.core.settings.RouteTrackColor
+import org.mbnavigator.android.core.settings.rememberEffectiveMapStyle
 import org.mbnavigator.android.core.settings.rememberNavigatorPalette
 import org.mbnavigator.android.core.voice.AndroidTextToSpeechService
 import org.osmdroid.config.Configuration
@@ -109,25 +124,24 @@ private val TileSourceOsmHot by lazy {
     )
 }
 
-private val TileSourceCyclOsm by lazy {
+private val TileSourceOsmDeRutas by lazy {
+    // Servidor rápido alemán/europeo OSM con alto contraste en carreteras nacionales, secundarias y puertos
     XYTileSource(
-        "CyclOSM", 0, 19, 256, ".png",
-        arrayOf(
-            "https://a.tile-cyclosm.openstreetmap.fr/cyclosm/",
-            "https://b.tile-cyclosm.openstreetmap.fr/cyclosm/",
-            "https://c.tile-cyclosm.openstreetmap.fr/cyclosm/"
-        )
+        "OsmDeRutas", 0, 19, 256, ".png",
+        arrayOf("https://tile.openstreetmap.de/")
     )
 }
 
 @Composable
 fun MotorcycleNavigationScreen(
+    showHamburgerMenu: Boolean = false,
+    onOpenHamburgerMenu: () -> Unit = {},
     onOpenGpsDiagnostics: () -> Unit = {},
     onOpenRoutes: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val palette = rememberNavigatorPalette()
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -135,11 +149,20 @@ fun MotorcycleNavigationScreen(
     val ttsService = remember { AndroidTextToSpeechService(context) }
 
     val realLocation by locationTracker.currentLocation.collectAsState()
+    val palette = rememberNavigatorPalette(realLocation)
+    val effectiveMapStyle = rememberEffectiveMapStyle(realLocation)
+
     val hasGpsFix by locationTracker.hasGpsFix.collectAsState()
     val gnssSummary by locationTracker.gnssSummary.collectAsState()
     val activeRoute by NavigationSessionRepository.activeRoute.collectAsState()
-    val mapStyle by AppPreferencesManager.mapStyle.collectAsState()
+    val navigationState by NavigationSessionRepository.navigationState.collectAsState()
     val routeColor by AppPreferencesManager.routeColor.collectAsState()
+    val mapOrientationMode by AppPreferencesManager.mapOrientationMode.collectAsState()
+    val speedAutoZoom by AppPreferencesManager.speedAutoZoomEnabled.collectAsState()
+    val trafficLayerEnabled by AppPreferencesManager.trafficLayerEnabled.collectAsState()
+    val autoRecalculate by AppPreferencesManager.autoRecalculateEnabled.collectAsState()
+    val routeOptions by AppPreferencesManager.routeOptions.collectAsState()
+    val favoriteDestinations by AppPreferencesManager.favoriteDestinations.collectAsState()
 
     var hasLocationPermission by remember { mutableStateOf(locationTracker.hasPermission()) }
     var followGps by remember { mutableStateOf(true) }
@@ -150,6 +173,11 @@ fun MotorcycleNavigationScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
     var isCalculatingRoute by remember { mutableStateOf(false) }
+    var isAutoRecalculating by remember { mutableStateOf(false) }
+    var lastAutoRecalcAtMs by remember { mutableLongStateOf(0L) }
+    var manualZoomPauseUntilMs by remember { mutableLongStateOf(0L) }
+    var trafficIncidents by remember { mutableStateOf<List<TrafficIncidentPoint>>(emptyList()) }
+    var lastAppliedTrafficKey by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<GeocodedPlace>>(emptyList()) }
     var searchError by remember { mutableStateOf<String?>(null) }
 
@@ -199,11 +227,42 @@ fun MotorcycleNavigationScreen(
         }
     }
 
-    LaunchedEffect(activeRoute?.id, activeRoute?.isPreviewSimulation, previewPlaying) {
+    DisposableEffect(lifecycleOwner, mapViewRef) {
+        val map = mapViewRef
+        if (map == null) {
+            onDispose {}
+        } else {
+            val observer = LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> map.onResume()
+                    Lifecycle.Event.ON_PAUSE -> map.onPause()
+                    else -> Unit
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                map.onResume()
+            }
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+                map.onPause()
+            }
+        }
+    }
+
+    LaunchedEffect(navigationState) {
+        if (navigationState == NavigationRunState.NAVIGATING) {
+            followGps = true
+        }
+    }
+
+    LaunchedEffect(activeRoute?.id, activeRoute?.isPreviewSimulation, previewPlaying, navigationState) {
         val route = activeRoute
-        if (route != null && route.isPreviewSimulation && previewPlaying && route.points.size > 1) {
+        val canSimulate = navigationState == NavigationRunState.NAVIGATING || navigationState == NavigationRunState.READY
+        if (route != null && route.isPreviewSimulation && previewPlaying && canSimulate && route.points.size > 1) {
             while (previewPlaying) {
                 delay(750L)
+                if (navigationState == NavigationRunState.PAUSED) continue
                 val step = (route.points.size / 160).coerceAtLeast(1)
                 val next = previewIndex + step
                 if (next >= route.points.lastIndex) {
@@ -249,9 +308,16 @@ fun MotorcycleNavigationScreen(
         }
     }
 
-    LaunchedEffect(liveProgress?.currentManeuver?.index, liveProgress?.distanceToManeuverMeters, voiceEnabled) {
+    LaunchedEffect(
+        liveProgress?.currentManeuver?.index,
+        liveProgress?.distanceToManeuverMeters,
+        voiceEnabled,
+        navigationState
+    ) {
         val progress = liveProgress ?: return@LaunchedEffect
-        if (!voiceEnabled || activeRoute == null) return@LaunchedEffect
+        if (!voiceEnabled || activeRoute == null || navigationState != NavigationRunState.NAVIGATING) {
+            return@LaunchedEffect
+        }
 
         val threshold = TurnByTurnEngine.determineVoicePromptThreshold(
             maneuverIndex = progress.currentManeuver.index,
@@ -268,16 +334,93 @@ fun MotorcycleNavigationScreen(
         }
     }
 
-    // Dibujar / actualizar capas del mapa OSMDroid (estilo de mapa, trazado colorido, waypoints y cursor)
-    LaunchedEffect(mapViewRef, activeRoute, effectivePosition, followGps, mapStyle, routeColor) {
+    // Recálculo automático si vas en marcha y te sales de ruta
+    LaunchedEffect(liveProgress?.isOffRoute, navigationState, activeRoute?.id, autoRecalculate) {
+        val route = activeRoute ?: return@LaunchedEffect
+        val pos = realLocation ?: return@LaunchedEffect
+        if (navigationState != NavigationRunState.NAVIGATING ||
+            route.isPreviewSimulation ||
+            !autoRecalculate ||
+            liveProgress?.isOffRoute != true ||
+            isAutoRecalculating
+        ) {
+            return@LaunchedEffect
+        }
+
+        val now = System.currentTimeMillis()
+        if ((now - lastAutoRecalcAtMs) < 20_000L) return@LaunchedEffect
+
+        // Esperar 3.5 s para confirmar desviación real y evitar falsos positivos en túneles o cruces
+        delay(3500L)
+        if (navigationState != NavigationRunState.NAVIGATING || liveProgress.isOffRoute != true) {
+            return@LaunchedEffect
+        }
+
+        val latestPos = realLocation ?: pos
+        val dest = route.points.lastOrNull() ?: return@LaunchedEffect
+        isAutoRecalculating = true
+        lastAutoRecalcAtMs = System.currentTimeMillis()
+        if (voiceEnabled) {
+            ttsService.speak("Fuera de ruta. Recalculando recorrido.", flushQueue = true)
+        }
+        val recalculated = OpenRoutingClient.calculateRoadRoute(
+            origin = latestPos,
+            destination = dest,
+            destinationName = route.title.removePrefix("Ruta a ").removePrefix("Ruta Directa (Offline) a "),
+            viaPoints = route.waypoints,
+            profile = selectedProfile,
+            options = routeOptions
+        )
+        NavigationSessionRepository.startCalculatedRoute(
+            result = recalculated,
+            waypoints = route.waypoints,
+            autoStart = true
+        )
+        isAutoRecalculating = false
+    }
+
+    // Capa de densidad e incidencias de tráfico abiertas DGT
+    LaunchedEffect(trafficLayerEnabled, activeRoute?.id, realLocation != null) {
+        if (!trafficLayerEnabled) {
+            trafficIncidents = emptyList()
+            return@LaunchedEffect
+        }
+        val center = realLocation
+            ?: activeRoute?.points?.firstOrNull()
+            ?: GeoPoint(40.4168, -3.7038)
+        trafficIncidents = TrafficDensityClient.fetchNearbyIncidents(center, radiusKm = 150.0)
+    }
+
+    // Dibujar / actualizar capas del mapa OSMDroid (estilo, tráfico, ruta, rotación y zoom por velocidad)
+    LaunchedEffect(
+        mapViewRef,
+        activeRoute,
+        effectivePosition,
+        followGps,
+        effectiveMapStyle,
+        routeColor,
+        mapOrientationMode,
+        speedAutoZoom,
+        trafficLayerEnabled,
+        trafficIncidents,
+        navigationState,
+        effectiveSpeedKmh
+    ) {
         val map = mapViewRef ?: return@LaunchedEffect
-        applyMapVisualStyle(map, mapStyle)
+        applyMapVisualStyle(map, effectiveMapStyle)
 
+        val trafficKey = if (trafficLayerEnabled) {
+            "on_${trafficIncidents.size}_${trafficIncidents.firstOrNull()?.id.orEmpty()}"
+        } else {
+            "off"
+        }
         val routeKey = activeRoute?.let { "${it.id}_${it.points.size}_${routeColor.name}" }
-        val routeChanged = routeKey != lastRenderedRouteKey
+        val overlaysChanged = (routeKey != lastRenderedRouteKey) || (trafficKey != lastAppliedTrafficKey)
 
-        if (routeChanged) {
+        if (overlaysChanged) {
+            val structuralRouteChange = routeKey != lastRenderedRouteKey
             lastRenderedRouteKey = routeKey
+            lastAppliedTrafficKey = trafficKey
             map.overlays.clear()
 
             val route = activeRoute
@@ -300,6 +443,24 @@ fun MotorcycleNavigationScreen(
                 }
                 map.overlays.add(borderLine)
                 map.overlays.add(mainLine)
+
+                if (trafficLayerEnabled) {
+                    val trafficSegs = TrafficDensityClient.buildRouteTrafficSegments(route.points, trafficIncidents)
+                    trafficSegs.forEach { seg ->
+                        val tLine = Polyline(map).apply {
+                            setPoints(
+                                listOf(
+                                    OsmGeoPoint(seg.start.latitude, seg.start.longitude),
+                                    OsmGeoPoint(seg.end.latitude, seg.end.longitude)
+                                )
+                            )
+                            outlinePaint.color = android.graphics.Color.parseColor(seg.level.colorHex)
+                            outlinePaint.strokeWidth = 7f
+                            outlinePaint.strokeCap = Paint.Cap.ROUND
+                        }
+                        map.overlays.add(tLine)
+                    }
+                }
 
                 val startMarker = Marker(map).apply {
                     position = osmPoints.first()
@@ -333,50 +494,93 @@ fun MotorcycleNavigationScreen(
                 }
                 map.overlays.add(endMarker)
 
-                if (osmPoints.size >= 2) {
-                    val bbox = BoundingBox.fromGeoPoints(osmPoints)
-                    map.post {
-                        try {
-                            map.zoomToBoundingBox(bbox, true, 120)
-                        } catch (_: Exception) {
-                            map.controller.setCenter(osmPoints.first())
-                            map.controller.setZoom(13.5)
+                if (structuralRouteChange) {
+                    if (osmPoints.size >= 2) {
+                        val bbox = BoundingBox.fromGeoPoints(osmPoints)
+                        map.post {
+                            try {
+                                map.zoomToBoundingBox(bbox, true, 120)
+                            } catch (_: Exception) {
+                                map.controller.setCenter(osmPoints.first())
+                                map.controller.setZoom(13.5)
+                            }
                         }
+                        followGps = route.isPreviewSimulation || navigationState == NavigationRunState.NAVIGATING
+                    } else {
+                        map.controller.setCenter(osmPoints.first())
+                        map.controller.setZoom(15.0)
                     }
-                    followGps = route.isPreviewSimulation
-                } else {
-                    map.controller.setCenter(osmPoints.first())
-                    map.controller.setZoom(15.0)
+                }
+            }
+
+            if (trafficLayerEnabled && trafficIncidents.isNotEmpty()) {
+                trafficIncidents.take(35).forEach { inc ->
+                    val incMarker = Marker(map).apply {
+                        position = OsmGeoPoint(inc.point.latitude, inc.point.longitude)
+                        title = "🚦 Tráfico ${inc.level.label}"
+                        snippet = inc.description
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        icon = createBadgeDrawable(
+                            context,
+                            "!",
+                            android.graphics.Color.parseColor(inc.level.colorHex)
+                        )
+                    }
+                    map.overlays.add(incMarker)
                 }
             }
         }
 
         val cursorTag = "MOTO_CURSOR"
         val existingCursor = map.overlays.filterIsInstance<Marker>().find { it.id == cursorTag }
+        val bearing = if (activeRoute?.isPreviewSimulation == true) {
+            computePreviewBearing(activeRoute, previewIndex)
+        } else {
+            effectivePosition?.bearingDegrees ?: 0f
+        }
+
         if (effectivePosition != null) {
             val posOsm = OsmGeoPoint(effectivePosition.latitude, effectivePosition.longitude)
-            val bearing = if (activeRoute?.isPreviewSimulation == true) {
-                computePreviewBearing(activeRoute, previewIndex)
-            } else {
-                effectivePosition.bearingDegrees ?: 0f
-            }
 
             val cursorMarker = existingCursor ?: Marker(map).apply {
                 id = cursorTag
                 title = "Tu moto"
+                isFlat = true
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 icon = createMotoArrowDrawable(context)
                 map.overlays.add(this)
             }
+            cursorMarker.isFlat = true
             cursorMarker.position = posOsm
             cursorMarker.rotation = -bearing
 
-            if (followGps && !routeChanged) {
+            if (followGps) {
                 map.controller.animateTo(posOsm)
-                if (map.zoomLevelDouble < 14.0) {
+
+                val targetOrientation = if (mapOrientationMode == MapOrientationMode.COURSE_UP) {
+                    -bearing
+                } else {
+                    0f
+                }
+                if (kotlin.math.abs(map.mapOrientation - targetOrientation) > 2f) {
+                    map.mapOrientation = targetOrientation
+                }
+
+                val nowMs = System.currentTimeMillis()
+                if (speedAutoZoom &&
+                    navigationState == NavigationRunState.NAVIGATING &&
+                    nowMs > manualZoomPauseUntilMs
+                ) {
+                    val targetZoom = NavigationDisplayCalculator.computeTargetZoomForSpeed(effectiveSpeedKmh)
+                    if (NavigationDisplayCalculator.shouldUpdateAutoZoom(map.zoomLevelDouble, targetZoom)) {
+                        map.controller.setZoom(targetZoom)
+                    }
+                } else if (map.zoomLevelDouble < 14.0 && !overlaysChanged) {
                     map.controller.setZoom(15.5)
                 }
             }
+        } else if (mapOrientationMode == MapOrientationMode.NORTH_UP && map.mapOrientation != 0f) {
+            map.mapOrientation = 0f
         }
         map.invalidate()
     }
@@ -390,13 +594,18 @@ fun MotorcycleNavigationScreen(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
+                // Inicializar configuración OSMDroid síncronamente antes de crear MapView/TileProvider
+                Configuration.getInstance().apply {
+                    load(ctx.applicationContext, ctx.getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
+                    userAgentValue = "MBNavigator-MotoGPS/1.0"
+                }
                 MapView(ctx).apply {
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
                     zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
                     controller.setZoom(6.5)
                     controller.setCenter(OsmGeoPoint(40.4168, -3.7038))
-                    applyMapVisualStyle(this, mapStyle)
+                    applyMapVisualStyle(this, effectiveMapStyle)
 
                     addMapListener(object : MapListener {
                         override fun onScroll(event: ScrollEvent?): Boolean {
@@ -408,6 +617,7 @@ fun MotorcycleNavigationScreen(
 
                         override fun onZoom(event: ZoomEvent?): Boolean = false
                     })
+                    onResume()
                     mapViewRef = this
                 }
             }
@@ -426,6 +636,27 @@ fun MotorcycleNavigationScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (showHamburgerMenu) {
+                    Surface(
+                        modifier = Modifier
+                            .size(50.dp)
+                            .clickable { onOpenHamburgerMenu() },
+                        color = palette.hudOverlay,
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.5.dp, palette.primary),
+                        shadowElevation = 4.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "☰",
+                                color = palette.primary,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                    }
+                }
+
                 Surface(
                     modifier = Modifier
                         .height(50.dp)
@@ -435,7 +666,8 @@ fun MotorcycleNavigationScreen(
                     border = BorderStroke(
                         1.5.dp,
                         if (hasGpsFix) palette.success else palette.secondary
-                    )
+                    ),
+                    shadowElevation = 3.dp
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp),
@@ -520,7 +752,7 @@ fun MotorcycleNavigationScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = mapStyle.shortLabel,
+                            text = effectiveMapStyle.shortLabel,
                             color = palette.textPrimary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
@@ -557,11 +789,16 @@ fun MotorcycleNavigationScreen(
                                 val recalculated = OpenRoutingClient.calculateRoadRoute(
                                     origin = origin,
                                     destination = dest,
-                                    destinationName = route.title,
+                                    destinationName = route.title.removePrefix("Ruta a ").removePrefix("Ruta Directa (Offline) a "),
                                     viaPoints = route.waypoints,
-                                    profile = selectedProfile
+                                    profile = selectedProfile,
+                                    options = routeOptions
                                 )
-                                NavigationSessionRepository.startCalculatedRoute(recalculated, route.waypoints)
+                                NavigationSessionRepository.startCalculatedRoute(
+                                    result = recalculated,
+                                    waypoints = route.waypoints,
+                                    autoStart = (navigationState == NavigationRunState.NAVIGATING)
+                                )
                                 isCalculatingRoute = false
                             }
                         }
@@ -610,9 +847,47 @@ fun MotorcycleNavigationScreen(
                     }
                 }
             }
+            if (trafficLayerEnabled || isAutoRecalculating) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (trafficLayerEnabled) {
+                        Surface(
+                            color = palette.hudOverlay,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, palette.border),
+                            shadowElevation = 2.dp
+                        ) {
+                            Text(
+                                text = "🚦 Tráfico: 🟢 Fluido · 🟡 Denso · 🔴 Retención (${trafficIncidents.size})",
+                                color = palette.textSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                    if (isAutoRecalculating) {
+                        Surface(
+                            color = palette.primary,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = "🔄 Recalculando en marcha...",
+                                color = palette.onPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
 
-        // 3. BOTONERA LATERAL DERECHA (Zoom +/- + Voz)
+        // 3. BOTONERA LATERAL DERECHA (Zoom +/-, Rotación Norte/Rumbo, Tráfico y Voz)
         Column(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
@@ -620,10 +895,29 @@ fun MotorcycleNavigationScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             GloveRoundButton(label = "+", palette = palette) {
+                manualZoomPauseUntilMs = System.currentTimeMillis() + 12_000L
                 mapViewRef?.controller?.zoomIn()
             }
             GloveRoundButton(label = "−", palette = palette) {
+                manualZoomPauseUntilMs = System.currentTimeMillis() + 12_000L
                 mapViewRef?.controller?.zoomOut()
+            }
+            GloveRoundButton(
+                label = if (mapOrientationMode == MapOrientationMode.COURSE_UP) "🏍️" else "🧭",
+                palette = palette,
+                borderColor = palette.primary
+            ) {
+                val next = AppPreferencesManager.toggleMapOrientationMode()
+                if (next == MapOrientationMode.NORTH_UP) {
+                    mapViewRef?.mapOrientation = 0f
+                }
+            }
+            GloveRoundButton(
+                label = "🚦",
+                palette = palette,
+                borderColor = if (trafficLayerEnabled) palette.success else palette.border
+            ) {
+                AppPreferencesManager.setTrafficLayerEnabled(!trafficLayerEnabled)
             }
             GloveRoundButton(
                 label = if (voiceEnabled) "🔊" else "🔇",
@@ -711,6 +1005,91 @@ fun MotorcycleNavigationScreen(
                 }
             }
 
+            if (route != null) {
+                Surface(
+                    color = palette.hudOverlay,
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, palette.border),
+                    shadowElevation = 4.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        when (navigationState) {
+                            NavigationRunState.NAVIGATING -> {
+                                Button(
+                                    onClick = { NavigationSessionRepository.pauseNavigation() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.secondary),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                ) {
+                                    Text("⏸ Pausar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                                Button(
+                                    onClick = { NavigationSessionRepository.stopNavigation() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.danger),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                ) {
+                                    Text("⏹ Parar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                            }
+                            NavigationRunState.PAUSED -> {
+                                Button(
+                                    onClick = { NavigationSessionRepository.resumeNavigation() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.primary),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                ) {
+                                    Text("▶ Reanudar", color = palette.onPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                                Button(
+                                    onClick = { NavigationSessionRepository.stopNavigation() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.danger),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                ) {
+                                    Text("⏹ Parar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                            }
+                            else -> {
+                                Button(
+                                    onClick = {
+                                        followGps = true
+                                        NavigationSessionRepository.startNavigation()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.primary),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(50.dp)
+                                ) {
+                                    Text(
+                                        text = "▶ Iniciar navegación",
+                                        color = palette.onPrimary,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 15.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -718,8 +1097,9 @@ fun MotorcycleNavigationScreen(
             ) {
                 Surface(
                     color = palette.hudOverlay,
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(20.dp),
                     border = BorderStroke(1.5.dp, palette.border),
+                    shadowElevation = 5.dp,
                     modifier = Modifier.weight(1.1f)
                 ) {
                     Row(
@@ -779,10 +1159,16 @@ fun MotorcycleNavigationScreen(
                 Button(
                     onClick = {
                         followGps = true
+                        manualZoomPauseUntilMs = 0L
                         val target = effectivePosition ?: activeRoute?.points?.firstOrNull()
                         if (target != null) {
                             mapViewRef?.controller?.animateTo(OsmGeoPoint(target.latitude, target.longitude))
-                            mapViewRef?.controller?.setZoom(16.0)
+                            val z = if (speedAutoZoom && navigationState == NavigationRunState.NAVIGATING) {
+                                NavigationDisplayCalculator.computeTargetZoomForSpeed(effectiveSpeedKmh)
+                            } else {
+                                16.0
+                            }
+                            mapViewRef?.controller?.setZoom(z)
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -870,6 +1256,92 @@ fun MotorcycleNavigationScreen(
                                             color = if (selected) palette.onPrimary else palette.textPrimary,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Preferencias de vía: Autovía, Peajes, Ferri, Caminos
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val toggleItems = listOf(
+                                Triple("🛣️ Autovía", routeOptions.allowHighways) {
+                                    AppPreferencesManager.updateRouteOptions { copy(allowHighways = !allowHighways) }
+                                },
+                                Triple("💶 Peajes", routeOptions.allowTolls) {
+                                    AppPreferencesManager.updateRouteOptions { copy(allowTolls = !allowTolls) }
+                                },
+                                Triple("⛴️ Ferri", routeOptions.allowFerries) {
+                                    AppPreferencesManager.updateRouteOptions { copy(allowFerries = !allowFerries) }
+                                },
+                                Triple("🪨 Caminos", routeOptions.allowUnpavedTracks) {
+                                    AppPreferencesManager.updateRouteOptions { copy(allowUnpavedTracks = !allowUnpavedTracks) }
+                                }
+                            )
+                            toggleItems.forEach { (label, active, onToggle) ->
+                                Surface(
+                                    modifier = Modifier.clickable { onToggle() },
+                                    color = if (active) palette.primary.copy(alpha = 0.16f) else palette.surfaceAlt,
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, if (active) palette.primary else palette.border)
+                                ) {
+                                    Text(
+                                        text = if (active) "✓ $label" else "✕ $label",
+                                        color = if (active) palette.primary else palette.textSecondary,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Destinos Favoritos (Casa, Trabajo, Personalizados)
+                        if (favoriteDestinations.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                favoriteDestinations.forEach { fav ->
+                                    Surface(
+                                        color = palette.primary.copy(alpha = 0.12f),
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = BorderStroke(1.dp, palette.primary),
+                                        modifier = Modifier.clickable {
+                                            scope.launch {
+                                                isCalculatingRoute = true
+                                                val origin = realLocation
+                                                    ?: mapViewRef?.mapCenter?.let {
+                                                        GeoPoint(it.latitude, it.longitude)
+                                                    }
+                                                    ?: GeoPoint(40.4168, -3.7038)
+                                                val calculated = OpenRoutingClient.calculateRoadRoute(
+                                                    origin = origin,
+                                                    destination = GeoPoint(fav.latitude, fav.longitude),
+                                                    destinationName = fav.name,
+                                                    profile = selectedProfile,
+                                                    options = routeOptions
+                                                )
+                                                NavigationSessionRepository.startCalculatedRoute(calculated)
+                                                isCalculatingRoute = false
+                                                showSearchSheet = false
+                                                followGps = false
+                                            }
+                                        }
+                                    ) {
+                                        Text(
+                                            text = "${fav.category.icon} ${fav.name}",
+                                            color = palette.primary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
                                         )
                                     }
                                 }
@@ -971,7 +1443,8 @@ fun MotorcycleNavigationScreen(
                                                     origin = origin,
                                                     destination = place.location,
                                                     destinationName = place.shortName,
-                                                    profile = selectedProfile
+                                                    profile = selectedProfile,
+                                                    options = routeOptions
                                                 )
                                                 NavigationSessionRepository.startCalculatedRoute(calculated)
                                                 isCalculatingRoute = false
@@ -994,6 +1467,41 @@ fun MotorcycleNavigationScreen(
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis
                                         )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            FavoritePlaceCategory.entries.forEach { cat ->
+                                                Surface(
+                                                    color = palette.surface,
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    border = BorderStroke(1.dp, palette.border),
+                                                    modifier = Modifier.clickable {
+                                                        val favId = when (cat) {
+                                                            FavoritePlaceCategory.HOME -> "fav_home"
+                                                            FavoritePlaceCategory.WORK -> "fav_work"
+                                                            FavoritePlaceCategory.CUSTOM -> "fav_${System.currentTimeMillis()}"
+                                                        }
+                                                        AppPreferencesManager.saveFavoriteDestination(
+                                                            FavoriteDestination(
+                                                                id = favId,
+                                                                name = if (cat == FavoritePlaceCategory.CUSTOM) place.shortName else cat.label,
+                                                                category = cat,
+                                                                address = place.displayName,
+                                                                latitude = place.location.latitude,
+                                                                longitude = place.location.longitude
+                                                            )
+                                                        )
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = "+ ${cat.icon} ${cat.label}",
+                                                        color = palette.primary,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1172,11 +1680,13 @@ private fun applyMapVisualStyle(map: MapView, style: MapColorStyle) {
     val desiredSource = when (style) {
         MapColorStyle.OSM_CLASSIC, MapColorStyle.OSM_NIGHT -> TileSourceFactory.MAPNIK
         MapColorStyle.OSM_HOT -> TileSourceOsmHot
-        MapColorStyle.CYCL_OSM -> TileSourceCyclOsm
+        MapColorStyle.CYCL_OSM -> TileSourceOsmDeRutas
         MapColorStyle.OPEN_TOPO -> TileSourceFactory.OpenTopo
     }
-    if (map.tileProvider.tileSource != desiredSource) {
+    if (map.tileProvider.tileSource.name() != desiredSource.name()) {
+        map.tileProvider.clearTileCache()
         map.setTileSource(desiredSource)
+        map.invalidate()
     }
 
     if (style == MapColorStyle.OSM_NIGHT) {

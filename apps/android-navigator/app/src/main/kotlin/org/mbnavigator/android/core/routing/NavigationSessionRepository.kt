@@ -33,6 +33,20 @@ data class ActiveRouteSession(
     val isPreviewSimulation: Boolean = false
 )
 
+enum class NavigationRunState {
+    IDLE,
+    READY,
+    NAVIGATING,
+    PAUSED
+}
+
+data class SharedRouteImportEvent(
+    val timestampMs: Long,
+    val success: Boolean,
+    val message: String,
+    val importedEntry: SavedRouteEntry? = null
+)
+
 /**
  * Repositorio centralizado (singleton por sesión de app) que conecta
  * la biblioteca de rutas GPX/KML, el calculador de rutas en carretera y el mapa GPS activo.
@@ -48,6 +62,12 @@ object NavigationSessionRepository {
     private val _activeRoute = MutableStateFlow<ActiveRouteSession?>(null)
     val activeRoute: StateFlow<ActiveRouteSession?> = _activeRoute.asStateFlow()
 
+    private val _navigationState = MutableStateFlow(NavigationRunState.IDLE)
+    val navigationState: StateFlow<NavigationRunState> = _navigationState.asStateFlow()
+
+    private val _sharedImportEvent = MutableStateFlow<SharedRouteImportEvent?>(null)
+    val sharedImportEvent: StateFlow<SharedRouteImportEvent?> = _sharedImportEvent.asStateFlow()
+
     fun ensureInitialized(context: Context) {
         if (initialized) return
         initialized = true
@@ -58,7 +78,11 @@ object NavigationSessionRepository {
         _savedRoutes.value = imported + builtIn
     }
 
-    fun startNavigatingRoute(route: SavedRouteEntry, previewSimulation: Boolean = false) {
+    fun startNavigatingRoute(
+        route: SavedRouteEntry,
+        previewSimulation: Boolean = false,
+        autoStart: Boolean = true
+    ) {
         val maneuvers = TurnByTurnEngine.extractManeuversFromTrack(route.points, route.title)
         _activeRoute.value = ActiveRouteSession(
             id = route.id,
@@ -68,9 +92,14 @@ object NavigationSessionRepository {
             waypoints = route.waypoints,
             isPreviewSimulation = previewSimulation
         )
+        _navigationState.value = if (autoStart) NavigationRunState.NAVIGATING else NavigationRunState.READY
     }
 
-    fun startCalculatedRoute(result: CalculatedRouteResult, waypoints: List<Waypoint> = emptyList()) {
+    fun startCalculatedRoute(
+        result: CalculatedRouteResult,
+        waypoints: List<Waypoint> = emptyList(),
+        autoStart: Boolean = false
+    ) {
         _activeRoute.value = ActiveRouteSession(
             id = "calc-${System.currentTimeMillis()}",
             title = result.title,
@@ -79,10 +108,38 @@ object NavigationSessionRepository {
             waypoints = waypoints,
             isPreviewSimulation = false
         )
+        _navigationState.value = if (autoStart) NavigationRunState.NAVIGATING else NavigationRunState.READY
+    }
+
+    fun startNavigation() {
+        if (_activeRoute.value != null) {
+            _navigationState.value = NavigationRunState.NAVIGATING
+        }
+    }
+
+    fun pauseNavigation() {
+        if (_navigationState.value == NavigationRunState.NAVIGATING) {
+            _navigationState.value = NavigationRunState.PAUSED
+        }
+    }
+
+    fun resumeNavigation() {
+        if (_activeRoute.value != null && _navigationState.value == NavigationRunState.PAUSED) {
+            _navigationState.value = NavigationRunState.NAVIGATING
+        }
+    }
+
+    fun stopNavigation() {
+        _navigationState.value = if (_activeRoute.value != null) {
+            NavigationRunState.READY
+        } else {
+            NavigationRunState.IDLE
+        }
     }
 
     fun clearActiveRoute() {
         _activeRoute.value = null
+        _navigationState.value = NavigationRunState.IDLE
     }
 
     fun importRouteFromUri(context: Context, uri: Uri): Result<SavedRouteEntry> {
@@ -127,6 +184,86 @@ object NavigationSessionRepository {
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /**
+     * Importa un archivo GPX/KML/GeoJSON compartido o abierto desde otra app (Intent VIEW/SEND)
+     * y lo deja preparado en pantalla listo para iniciar navegación.
+     */
+    fun importSharedRouteUri(context: Context, uri: Uri): Result<SavedRouteEntry> {
+        val res = importRouteFromUri(context, uri)
+        res.fold(
+            onSuccess = { entry ->
+                startNavigatingRoute(entry, previewSimulation = false, autoStart = false)
+                _sharedImportEvent.value = SharedRouteImportEvent(
+                    timestampMs = System.currentTimeMillis(),
+                    success = true,
+                    message = "Ruta recibida: ${entry.title} (${entry.points.size} pts)",
+                    importedEntry = entry
+                )
+            },
+            onFailure = { err ->
+                _sharedImportEvent.value = SharedRouteImportEvent(
+                    timestampMs = System.currentTimeMillis(),
+                    success = false,
+                    message = err.message ?: "El archivo compartido no es un GPX/KML/GeoJSON válido"
+                )
+            }
+        )
+        return res
+    }
+
+    fun consumeSharedImportEvent() {
+        _sharedImportEvent.value = null
+    }
+
+    /**
+     * Genera un archivo GPX 1.1 temporal listo para compartir con otras aplicaciones vía FileProvider.
+     */
+    fun exportRouteToShareableGpxFile(context: Context, route: SavedRouteEntry): File {
+        val shareDir = File(context.cacheDir, "shared_gpx").apply { if (!exists()) mkdirs() }
+        val safeName = route.title
+            .replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            .trim('_')
+            .ifBlank { "ruta_mb_navigator" }
+        val outFile = File(shareDir, "$safeName.gpx")
+
+        val gpxBuilder = StringBuilder()
+        gpxBuilder.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+        gpxBuilder.append("<gpx version=\"1.1\" creator=\"MB-navigator\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
+        gpxBuilder.append("  <metadata><name>${escapeXml(route.title)}</name></metadata>\n")
+        route.waypoints.forEach { wp ->
+            gpxBuilder.append("  <wpt lat=\"${wp.point.latitude}\" lon=\"${wp.point.longitude}\">\n")
+            gpxBuilder.append("    <name>${escapeXml(wp.name)}</name>\n")
+            if (!wp.description.isNullOrBlank()) {
+                gpxBuilder.append("    <desc>${escapeXml(wp.description)}</desc>\n")
+            }
+            gpxBuilder.append("  </wpt>\n")
+        }
+        gpxBuilder.append("  <trk>\n")
+        gpxBuilder.append("    <name>${escapeXml(route.title)}</name>\n")
+        gpxBuilder.append("    <trkseg>\n")
+        route.points.forEach { pt ->
+            gpxBuilder.append("      <trkpt lat=\"${pt.latitude}\" lon=\"${pt.longitude}\">")
+            if (pt.elevationMeters != null) {
+                gpxBuilder.append("<ele>${pt.elevationMeters}</ele>")
+            }
+            gpxBuilder.append("</trkpt>\n")
+        }
+        gpxBuilder.append("    </trkseg>\n")
+        gpxBuilder.append("  </trk>\n")
+        gpxBuilder.append("</gpx>\n")
+
+        outFile.writeText(gpxBuilder.toString(), Charsets.UTF_8)
+        return outFile
+    }
+
+    private fun escapeXml(text: String): String {
+        return text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
     }
 
     private fun resolveFileName(context: Context, uri: Uri): String {
