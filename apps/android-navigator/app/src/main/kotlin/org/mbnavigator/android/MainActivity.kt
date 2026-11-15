@@ -3,6 +3,7 @@ package org.mbnavigator.android
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -30,6 +31,9 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     setTheme(R.style.Theme_MBNavigator)
     super.onCreate(savedInstanceState)
+
+    // Evita que la pantalla se apague mientras el navegador está activo en primer plano
+    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
     AppPreferencesManager.init(applicationContext)
     NavigationSessionRepository.ensureInitialized(applicationContext)
@@ -84,6 +88,11 @@ class MainActivity : ComponentActivity() {
         }
       }
     }
+  }
+
+  override fun onResume() {
+    super.onResume()
+    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
   }
 
   override fun onNewIntent(intent: Intent) {

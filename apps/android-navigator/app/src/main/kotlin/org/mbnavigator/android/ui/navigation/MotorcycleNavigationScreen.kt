@@ -756,6 +756,7 @@ fun MotorcycleNavigationScreen(
                 }
                 @SuppressLint("ClickableViewAccessibility")
                 MapView(ctx).apply {
+                    keepScreenOn = true
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
                     zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
