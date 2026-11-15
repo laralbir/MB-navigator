@@ -62,12 +62,18 @@ Tipos permitidos:
 │   ├── android-navigator/    # App nativa Android (GPS / Navegación)
 │   └── route-editor/         # App multiplataforma (Edición de rutas)
 ├── shared/                   # Lógica y modelos compartidos
-├── docs/
+├── docs/                     # Centro de documentación viva
+│   ├── technical/            # Documentación técnica por aplicación y core
+│   ├── user-guides/          # Guías y manuales de usuario final
 │   ├── specs/                # Especificaciones SDD
 │   ├── adr/                  # Architecture Decision Records
-│   └── release-guide.md      # Guía de firma y release en Play Store
+│   ├── release-guide.md      # Guía de firma y release en Play Store
+│   └── README.md             # Índice general de documentación
 ├── .editorconfig
 ├── .gitignore
 ├── CONTRIBUTING.md
 └── README.md
 ```
+
+Para más detalles, consulta el [Índice de Documentación](docs/README.md).
+
