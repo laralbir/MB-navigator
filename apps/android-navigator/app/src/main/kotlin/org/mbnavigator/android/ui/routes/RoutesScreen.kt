@@ -150,8 +150,9 @@ fun RoutesScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = palette.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                     border = BorderStroke(1.dp, palette.border),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(20.dp)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(

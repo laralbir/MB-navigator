@@ -143,6 +143,133 @@ object OpenRoutingClient {
         )
     }
 
+    /**
+     * Determina si un trazado cargado (p. ej. GPX de pocos puntos o ruta predefinida)
+     * tiene segmentos rectos largos que conviene ajustar suavemente a las carreteras reales del mapa.
+     */
+    fun needsRoadSnapping(points: List<GeoPoint>): Boolean {
+        if (points.size < 2) return false
+        var totalMeters = 0.0
+        var maxSegMeters = 0.0
+        for (i in 0 until points.lastIndex) {
+            val d = HaversineDistanceCalculator.distanceMeters(points[i], points[i + 1])
+            totalMeters += d
+            if (d > maxSegMeters) maxSegMeters = d
+        }
+        val avgSegMeters = totalMeters / (points.size - 1)
+        return avgSegMeters > 95.0 || maxSegMeters > 450.0
+    }
+
+    /**
+     * Ajusta un track o lista de puntos dispersos a la geometría exacta de carreteras OpenStreetMap
+     * usando Valhalla (`trace_route` con `map_snap`, o ruta multistop como respaldo).
+     */
+    suspend fun snapRouteToRoads(
+        points: List<GeoPoint>,
+        routeTitle: String,
+        viaPoints: List<Waypoint> = emptyList(),
+        profile: MotorcycleRoutingProfile = MotorcycleRoutingProfile.CURVY,
+        options: RouteCalculationOptions = RouteCalculationOptions()
+    ): CalculatedRouteResult? = withContext(Dispatchers.IO) {
+        if (points.size < 2) return@withContext null
+
+        // Si son pocos puntos de paso (< 32), Valhalla route calcula el trazado exacto por carretera entre ellos
+        if (points.size <= 32) {
+            tryValhallaMotorcycleRoute(points, routeTitle, profile, options)?.let { snapped ->
+                return@withContext snapped.copy(title = routeTitle)
+            }
+        }
+
+        // Para tracks más largos, map-matching Valhalla /trace_route (máx. 180 muestras)
+        val sampled = downsampleEvenly(points, 180)
+        tryValhallaTraceMatch(sampled, routeTitle, profile, options)?.let {
+            return@withContext it
+        }
+
+        // Respaldo: muestrear hasta 20 puntos de paso y enrutar
+        val keyStops = downsampleEvenly(points, 20)
+        tryValhallaMotorcycleRoute(keyStops, routeTitle, profile, options)?.let { snapped ->
+            return@withContext snapped.copy(title = routeTitle)
+        }
+        null
+    }
+
+    private fun downsampleEvenly(points: List<GeoPoint>, maxCount: Int): List<GeoPoint> {
+        if (points.size <= maxCount) return points
+        val out = ArrayList<GeoPoint>(maxCount)
+        val last = points.lastIndex.toDouble()
+        for (i in 0 until maxCount) {
+            val idx = ((i.toDouble() / (maxCount - 1)) * last).toInt().coerceIn(0, points.lastIndex)
+            val candidate = points[idx]
+            if (out.isEmpty() || out.last() != candidate) out.add(candidate)
+        }
+        if (out.last() != points.last()) out[out.lastIndex] = points.last()
+        return out
+    }
+
+    private fun buildMotorcycleCostingOptions(
+        profile: MotorcycleRoutingProfile,
+        options: RouteCalculationOptions
+    ): JSONObject {
+        val highwayPref = when {
+            !options.allowHighways -> 0.0
+            profile == MotorcycleRoutingProfile.FAST_HIGHWAY -> 1.0
+            profile == MotorcycleRoutingProfile.EXTRA_CURVY_SCENIC -> 0.15
+            else -> 0.35
+        }
+        return JSONObject().apply {
+            put("use_highways", highwayPref)
+            put("use_tolls", if (options.allowTolls) 0.9 else 0.0)
+            put("use_ferry", if (options.allowFerries) 0.85 else 0.0)
+            put("use_trails", if (options.allowUnpavedTracks) 0.85 else 0.0)
+        }
+    }
+
+    private fun tryValhallaTraceMatch(
+        tracePoints: List<GeoPoint>,
+        routeTitle: String,
+        profile: MotorcycleRoutingProfile,
+        options: RouteCalculationOptions
+    ): CalculatedRouteResult? {
+        return try {
+            val shapeArr = org.json.JSONArray()
+            tracePoints.forEach { pt ->
+                shapeArr.put(
+                    JSONObject().apply {
+                        put("lat", pt.latitude)
+                        put("lon", pt.longitude)
+                    }
+                )
+            }
+            val payload = JSONObject().apply {
+                put("shape", shapeArr)
+                put("costing", "motorcycle")
+                put("costing_options", JSONObject().apply {
+                    put("motorcycle", buildMotorcycleCostingOptions(profile, options))
+                })
+                put("shape_match", "map_snap")
+                put("language", "es-ES")
+                put("directions_options", JSONObject().apply { put("units", "kilometers") })
+            }
+            val conn = (URL("https://valhalla1.openstreetmap.de/trace_route").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("User-Agent", "MBNavigator-MotoGPS/1.0")
+                setRequestProperty("Content-Type", "application/json")
+                doOutput = true
+                connectTimeout = 9000
+                readTimeout = 9000
+            }
+            OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
+                writer.write(payload.toString())
+            }
+            if (conn.responseCode != 200) return null
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            parseValhallaTripJson(body, routeTitle)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun tryValhallaMotorcycleRoute(
         stops: List<GeoPoint>,
         destinationName: String,
@@ -160,18 +287,7 @@ object OpenRoutingClient {
                 )
             }
 
-            val highwayPref = when {
-                !options.allowHighways -> 0.0
-                profile == MotorcycleRoutingProfile.FAST_HIGHWAY -> 1.0
-                profile == MotorcycleRoutingProfile.EXTRA_CURVY_SCENIC -> 0.15
-                else -> 0.35
-            }
-            val motoOpts = JSONObject().apply {
-                put("use_highways", highwayPref)
-                put("use_tolls", if (options.allowTolls) 0.9 else 0.0)
-                put("use_ferry", if (options.allowFerries) 0.85 else 0.0)
-                put("use_trails", if (options.allowUnpavedTracks) 0.85 else 0.0)
-            }
+            val motoOpts = buildMotorcycleCostingOptions(profile, options)
 
             val payload = JSONObject().apply {
                 put("locations", locationsArr)
@@ -195,6 +311,14 @@ object OpenRoutingClient {
 
             if (conn.responseCode != 200) return null
             val body = conn.inputStream.bufferedReader().use { it.readText() }
+            parseValhallaTripJson(body, "Ruta a $destinationName")
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseValhallaTripJson(body: String, resultTitle: String): CalculatedRouteResult? {
+        return try {
             val trip = JSONObject(body).optJSONObject("trip") ?: return null
             val legs = trip.optJSONArray("legs") ?: return null
             if (legs.length() == 0) return null
@@ -224,7 +348,7 @@ object OpenRoutingClient {
                     val mObj = maneuversArr.getJSONObject(m)
                     val beginIdx = (pointOffset + mObj.optInt("begin_shape_index", 0))
                         .coerceIn(0, (combinedPoints.size - 1).coerceAtLeast(0))
-                    val loc = combinedPoints.getOrElse(beginIdx) { stops.first() }
+                    val loc = combinedPoints.getOrElse(beginIdx) { combinedPoints.firstOrNull() ?: return null }
                     val valType = mObj.optInt("type", 0)
                     val mType = mapValhallaManeuverType(valType)
                     val streetArr = mObj.optJSONArray("street_names")
@@ -250,10 +374,10 @@ object OpenRoutingClient {
             if (combinedPoints.size < 2) return null
 
             CalculatedRouteResult(
-                title = "Ruta a $destinationName",
+                title = resultTitle,
                 points = combinedPoints,
                 maneuvers = combinedManeuvers.ifEmpty {
-                    TurnByTurnEngine.extractManeuversFromTrack(combinedPoints, destinationName)
+                    TurnByTurnEngine.extractManeuversFromTrack(combinedPoints, resultTitle)
                 },
                 distanceKm = if (totalDistKm > 0.0) totalDistKm else HaversineDistanceCalculator.totalDistanceMeters(combinedPoints) / 1000.0,
                 estimatedMinutes = (totalDurationSec / 60.0).toInt().coerceAtLeast(1),

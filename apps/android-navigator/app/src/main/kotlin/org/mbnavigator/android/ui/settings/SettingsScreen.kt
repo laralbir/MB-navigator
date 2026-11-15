@@ -28,6 +28,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -102,6 +103,12 @@ fun SettingsScreen(
     val speedAutoZoom by AppPreferencesManager.speedAutoZoomEnabled.collectAsState()
     val trafficLayerEnabled by AppPreferencesManager.trafficLayerEnabled.collectAsState()
     val autoRecalcEnabled by AppPreferencesManager.autoRecalculateEnabled.collectAsState()
+    val voiceGuidanceEnabled by AppPreferencesManager.voiceGuidanceEnabled.collectAsState()
+    val voiceVerbosity by AppPreferencesManager.voiceVerbosity.collectAsState()
+    val speechSpeedRate by AppPreferencesManager.voiceSpeechRate.collectAsState()
+    val voiceLanguageTag by AppPreferencesManager.voiceLanguageTag.collectAsState()
+    val dgtAlertsEnabled by AppPreferencesManager.dgtAlertsEnabled.collectAsState()
+    val speedCameraAlertsEnabled by AppPreferencesManager.speedCameraAlertsEnabled.collectAsState()
 
     DisposableEffect(Unit) {
         onDispose {
@@ -109,11 +116,6 @@ fun SettingsScreen(
         }
     }
 
-    var voiceVerbosity by remember { mutableStateOf(VoiceVerbosityLevel.STANDARD) }
-    var speechSpeedRate by remember { mutableFloatStateOf(1.0f) }
-    var selectedLanguageName by remember { mutableStateOf("Español (España)") }
-    var dgtAlertsEnabled by remember { mutableStateOf(true) }
-    var speedCameraAlertsEnabled by remember { mutableStateOf(true) }
     var geminiAiEnabled by remember { mutableStateOf(false) }
     var geminiApiKey by remember { mutableStateOf("") }
     var favSearchQuery by remember { mutableStateOf("") }
@@ -409,6 +411,21 @@ fun SettingsScreen(
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
+                SettingsToggleRow(
+                    title = "Indicaciones de giro por voz",
+                    subtitle = if (voiceGuidanceEnabled) {
+                        "Activas en cada maniobra de ruta"
+                    } else {
+                        "Silenciadas; radares, accidentes y vehículos averiados siguen avisando"
+                    },
+                    checked = voiceGuidanceEnabled,
+                    palette = palette,
+                    onCheckedChange = { enabled ->
+                        AppPreferencesManager.setVoiceGuidanceEnabled(enabled)
+                        if (!enabled) ttsService.stopSpeaking()
+                    }
+                )
+                HorizontalDivider(color = palette.border, modifier = Modifier.padding(vertical = 10.dp))
                 Text("Nivel de Verbosidad de Indicaciones", color = palette.textPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
@@ -416,13 +433,13 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     SelectableOptionPill("Mínima", voiceVerbosity == VoiceVerbosityLevel.MINIMAL, palette, Modifier.weight(1f)) {
-                        voiceVerbosity = VoiceVerbosityLevel.MINIMAL
+                        AppPreferencesManager.setVoiceVerbosity(VoiceVerbosityLevel.MINIMAL)
                     }
                     SelectableOptionPill("Estándar", voiceVerbosity == VoiceVerbosityLevel.STANDARD, palette, Modifier.weight(1f)) {
-                        voiceVerbosity = VoiceVerbosityLevel.STANDARD
+                        AppPreferencesManager.setVoiceVerbosity(VoiceVerbosityLevel.STANDARD)
                     }
                     SelectableOptionPill("Detallada", voiceVerbosity == VoiceVerbosityLevel.DETAILED, palette, Modifier.weight(1f)) {
-                        voiceVerbosity = VoiceVerbosityLevel.DETAILED
+                        AppPreferencesManager.setVoiceVerbosity(VoiceVerbosityLevel.DETAILED)
                     }
                 }
 
@@ -444,16 +461,16 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    SelectableOptionPill("Español (ES)", selectedLanguageName == "Español (España)", palette, Modifier.weight(1f)) {
-                        selectedLanguageName = "Español (España)"
+                    SelectableOptionPill("Español (ES)", voiceLanguageTag == "es-ES", palette, Modifier.weight(1f)) {
+                        AppPreferencesManager.setVoiceLanguageTag("es-ES")
                         ttsService.setLanguage(Locale("es", "ES"))
                     }
-                    SelectableOptionPill("LATAM", selectedLanguageName == "Español (Latinoamérica)", palette, Modifier.weight(1f)) {
-                        selectedLanguageName = "Español (Latinoamérica)"
+                    SelectableOptionPill("LATAM", voiceLanguageTag == "es-US", palette, Modifier.weight(1f)) {
+                        AppPreferencesManager.setVoiceLanguageTag("es-US")
                         ttsService.setLanguage(Locale("es", "US"))
                     }
-                    SelectableOptionPill("English", selectedLanguageName == "English (US)", palette, Modifier.weight(1f)) {
-                        selectedLanguageName = "English (US)"
+                    SelectableOptionPill("English", voiceLanguageTag == "en-US", palette, Modifier.weight(1f)) {
+                        AppPreferencesManager.setVoiceLanguageTag("en-US")
                         ttsService.setLanguage(Locale.US)
                     }
                 }
@@ -464,15 +481,15 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     SelectableOptionPill("0.85x", speechSpeedRate == 0.85f, palette, Modifier.weight(1f)) {
-                        speechSpeedRate = 0.85f
+                        AppPreferencesManager.setVoiceSpeechRate(0.85f)
                         ttsService.setSpeechRate(0.85f)
                     }
                     SelectableOptionPill("1.0x Normal", speechSpeedRate == 1.0f, palette, Modifier.weight(1f)) {
-                        speechSpeedRate = 1.0f
+                        AppPreferencesManager.setVoiceSpeechRate(1.0f)
                         ttsService.setSpeechRate(1.0f)
                     }
                     SelectableOptionPill("1.15x Ágil", speechSpeedRate == 1.15f, palette, Modifier.weight(1f)) {
-                        speechSpeedRate = 1.15f
+                        AppPreferencesManager.setVoiceSpeechRate(1.15f)
                         ttsService.setSpeechRate(1.15f)
                     }
                 }
@@ -753,17 +770,17 @@ fun SettingsScreen(
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SettingsToggleRow(
                     title = "Alertas DGT 3.0 en Tiempo Real",
-                    subtitle = "Balizas V16 activas, vehículos detenidos y cortes de vía",
+                    subtitle = "Balizas V16, vehículos averiados, accidentes y cortes (activos aunque desactives la voz)",
                     checked = dgtAlertsEnabled,
                     palette = palette,
-                    onCheckedChange = { dgtAlertsEnabled = it }
+                    onCheckedChange = { AppPreferencesManager.setDgtAlertsEnabled(it) }
                 )
                 SettingsToggleRow(
                     title = "Aviso de Radares y Límites",
-                    subtitle = "Radares fijos, de tramo y alerta sonora de exceso de velocidad",
+                    subtitle = "Radares fijos y alertas de peligro sonoras/visuales incluso con la voz desactivada",
                     checked = speedCameraAlertsEnabled,
                     palette = palette,
-                    onCheckedChange = { speedCameraAlertsEnabled = it }
+                    onCheckedChange = { AppPreferencesManager.setSpeedCameraAlertsEnabled(it) }
                 )
             }
         }

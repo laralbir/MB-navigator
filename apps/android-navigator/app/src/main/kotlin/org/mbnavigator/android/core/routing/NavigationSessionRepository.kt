@@ -111,6 +111,19 @@ object NavigationSessionRepository {
         _navigationState.value = if (autoStart) NavigationRunState.NAVIGATING else NavigationRunState.READY
     }
 
+    /**
+     * Sustituye la geometría y maniobras de la ruta activa por su trazado ajustado a las carreteras OSM
+     * conservando el identificador y modo de navegación/simulación actuales.
+     */
+    fun applyRoadSnappedGeometry(routeId: String, snapped: CalculatedRouteResult) {
+        val current = _activeRoute.value ?: return
+        if (current.id != routeId) return
+        _activeRoute.value = current.copy(
+            points = snapped.points,
+            maneuvers = snapped.maneuvers
+        )
+    }
+
     fun startNavigation() {
         if (_activeRoute.value != null) {
             _navigationState.value = NavigationRunState.NAVIGATING

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.mbnavigator.android.core.model.GeoPoint
+import org.mbnavigator.android.core.voice.VoiceVerbosityLevel
 
 enum class AppThemeMode(val label: String, val icon: String) {
     SYSTEM_SENSOR("Sistema / Sensor", "🌓"),
@@ -107,6 +108,12 @@ object AppPreferencesManager {
     private const val KEY_OPT_FERRIES = "route_opt_ferries"
     private const val KEY_OPT_TRACKS = "route_opt_tracks"
     private const val KEY_FAVORITE_DESTINATIONS = "favorite_destinations_json"
+    private const val KEY_VOICE_GUIDANCE = "voice_guidance_enabled"
+    private const val KEY_VOICE_VERBOSITY = "voice_verbosity_level"
+    private const val KEY_VOICE_SPEECH_RATE = "voice_speech_rate"
+    private const val KEY_VOICE_LANGUAGE_TAG = "voice_language_tag"
+    private const val KEY_DGT_ALERTS_ENABLED = "dgt_alerts_enabled"
+    private const val KEY_SPEED_CAMERA_ALERTS_ENABLED = "speed_camera_alerts_enabled"
 
     private var prefs: SharedPreferences? = null
 
@@ -145,6 +152,24 @@ object AppPreferencesManager {
 
     private val _favoriteDestinations = MutableStateFlow<List<FavoriteDestination>>(emptyList())
     val favoriteDestinations: StateFlow<List<FavoriteDestination>> = _favoriteDestinations.asStateFlow()
+
+    private val _voiceGuidanceEnabled = MutableStateFlow(true)
+    val voiceGuidanceEnabled: StateFlow<Boolean> = _voiceGuidanceEnabled.asStateFlow()
+
+    private val _voiceVerbosity = MutableStateFlow(VoiceVerbosityLevel.STANDARD)
+    val voiceVerbosity: StateFlow<VoiceVerbosityLevel> = _voiceVerbosity.asStateFlow()
+
+    private val _voiceSpeechRate = MutableStateFlow(1.0f)
+    val voiceSpeechRate: StateFlow<Float> = _voiceSpeechRate.asStateFlow()
+
+    private val _voiceLanguageTag = MutableStateFlow("es-ES")
+    val voiceLanguageTag: StateFlow<String> = _voiceLanguageTag.asStateFlow()
+
+    private val _dgtAlertsEnabled = MutableStateFlow(true)
+    val dgtAlertsEnabled: StateFlow<Boolean> = _dgtAlertsEnabled.asStateFlow()
+
+    private val _speedCameraAlertsEnabled = MutableStateFlow(true)
+    val speedCameraAlertsEnabled: StateFlow<Boolean> = _speedCameraAlertsEnabled.asStateFlow()
 
     fun init(context: Context) {
         if (prefs != null) return
@@ -186,6 +211,44 @@ object AppPreferencesManager {
             allowUnpavedTracks = sp.getBoolean(KEY_OPT_TRACKS, false)
         )
         _favoriteDestinations.value = parseFavoritesJson(sp.getString(KEY_FAVORITE_DESTINATIONS, null))
+        _voiceGuidanceEnabled.value = sp.getBoolean(KEY_VOICE_GUIDANCE, true)
+        _voiceVerbosity.value = runCatching {
+            VoiceVerbosityLevel.valueOf(sp.getString(KEY_VOICE_VERBOSITY, VoiceVerbosityLevel.STANDARD.name)!!)
+        }.getOrDefault(VoiceVerbosityLevel.STANDARD)
+        _voiceSpeechRate.value = sp.getFloat(KEY_VOICE_SPEECH_RATE, 1.0f)
+        _voiceLanguageTag.value = sp.getString(KEY_VOICE_LANGUAGE_TAG, "es-ES") ?: "es-ES"
+        _dgtAlertsEnabled.value = sp.getBoolean(KEY_DGT_ALERTS_ENABLED, true)
+        _speedCameraAlertsEnabled.value = sp.getBoolean(KEY_SPEED_CAMERA_ALERTS_ENABLED, true)
+    }
+
+    fun setVoiceGuidanceEnabled(enabled: Boolean) {
+        _voiceGuidanceEnabled.value = enabled
+        prefs?.edit()?.putBoolean(KEY_VOICE_GUIDANCE, enabled)?.apply()
+    }
+
+    fun setVoiceVerbosity(level: VoiceVerbosityLevel) {
+        _voiceVerbosity.value = level
+        prefs?.edit()?.putString(KEY_VOICE_VERBOSITY, level.name)?.apply()
+    }
+
+    fun setVoiceSpeechRate(rate: Float) {
+        _voiceSpeechRate.value = rate
+        prefs?.edit()?.putFloat(KEY_VOICE_SPEECH_RATE, rate)?.apply()
+    }
+
+    fun setVoiceLanguageTag(tag: String) {
+        _voiceLanguageTag.value = tag
+        prefs?.edit()?.putString(KEY_VOICE_LANGUAGE_TAG, tag)?.apply()
+    }
+
+    fun setDgtAlertsEnabled(enabled: Boolean) {
+        _dgtAlertsEnabled.value = enabled
+        prefs?.edit()?.putBoolean(KEY_DGT_ALERTS_ENABLED, enabled)?.apply()
+    }
+
+    fun setSpeedCameraAlertsEnabled(enabled: Boolean) {
+        _speedCameraAlertsEnabled.value = enabled
+        prefs?.edit()?.putBoolean(KEY_SPEED_CAMERA_ALERTS_ENABLED, enabled)?.apply()
     }
 
     fun setThemeMode(mode: AppThemeMode) {
@@ -409,34 +472,34 @@ fun rememberNavigatorPalette(location: GeoPoint? = null): NavigatorPalette {
     return if (isDark) {
         NavigatorPalette(
             isDark = true,
-            bg = Color(0xFF101416),
-            surface = Color(0xFF1D2023),
-            surfaceAlt = Color(0xFF272A2D),
-            hudOverlay = Color(0xEB191C1F),
-            border = Color(0xFF40484E),
-            textPrimary = Color(0xFFE0E3E6),
-            textSecondary = Color(0xFFBFC8CF),
-            primary = Color(0xFF87CFF9),
-            onPrimary = Color(0xFF00354A),
-            secondary = Color(0xFFB0CADC),
-            success = Color(0xFF6FD9AC),
-            danger = Color(0xFFFFB4AB)
+            bg = Color(0xFF0E141B),
+            surface = Color(0xFF17202B),
+            surfaceAlt = Color(0xFF212D3C),
+            hudOverlay = Color(0xF217202B),
+            border = Color(0xFF2E3C4E),
+            textPrimary = Color(0xFFF1F5F9),
+            textSecondary = Color(0xFFAAB8C8),
+            primary = Color(0xFF5FA8FF),
+            onPrimary = Color(0xFF072342),
+            secondary = Color(0xFF38BDF8),
+            success = Color(0xFF34D399),
+            danger = Color(0xFFFF7B7B)
         )
     } else {
         NavigatorPalette(
             isDark = false,
-            bg = Color(0xFFF7F9FD),
+            bg = Color(0xFFF5F7FB),
             surface = Color(0xFFFFFFFF),
-            surfaceAlt = Color(0xFFECEEF1),
-            hudOverlay = Color(0xF5F7F9FD),
-            border = Color(0xFFBFC8CF),
-            textPrimary = Color(0xFF191C1F),
-            textSecondary = Color(0xFF40484E),
-            primary = Color(0xFF00506E),
+            surfaceAlt = Color(0xFFEEF2F8),
+            hudOverlay = Color(0xFAFFFFFF),
+            border = Color(0xFFE2E8F0),
+            textPrimary = Color(0xFF111827),
+            textSecondary = Color(0xFF64748B),
+            primary = Color(0xFF1A56DB),
             onPrimary = Color(0xFFFFFFFF),
-            secondary = Color(0xFF23759B),
-            success = Color(0xFF1B7F5C),
-            danger = Color(0xFFBA1A1A)
+            secondary = Color(0xFF0EA5E9),
+            success = Color(0xFF10B981),
+            danger = Color(0xFFEF4444)
         )
     }
 }

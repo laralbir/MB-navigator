@@ -3,7 +3,11 @@ package org.mbnavigator.android.core.voice
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +23,7 @@ class AndroidTextToSpeechService(
 ) : TextToSpeech.OnInitListener {
 
     private var tts: TextToSpeech? = null
+    private var speechRateValue: Float = 1.0f
 
     private val _isInitialized = MutableStateFlow(false)
     val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
@@ -42,6 +47,7 @@ class AndroidTextToSpeechService(
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
                 engine.setAudioAttributes(audioAttributes)
+                engine.setSpeechRate(speechRateValue)
 
                 val result = engine.setLanguage(_selectedLanguage.value)
                 if (result == TextToSpeech.LANG_AVAILABLE || result == TextToSpeech.LANG_COUNTRY_AVAILABLE) {
@@ -72,7 +78,32 @@ class AndroidTextToSpeechService(
         tts?.speak(text, queueMode, params, "MB_NAV_${System.currentTimeMillis()}")
     }
 
+    fun stopSpeaking() {
+        tts?.stop()
+    }
+
+    /**
+     * Emite un tono acústico de advertencia vial (radares, accidentes, vehículos averiados)
+     * incluso cuando la guía de giros por voz está silenciada.
+     */
+    fun playSafetyAlertTone(urgent: Boolean = false) {
+        try {
+            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 95)
+            val tone = if (urgent) ToneGenerator.TONE_PROP_BEEP2 else ToneGenerator.TONE_PROP_BEEP
+            val durationMs = if (urgent) 360 else 220
+            toneGen.startTone(tone, durationMs)
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    toneGen.release()
+                } catch (_: Exception) {}
+            }, durationMs + 150L)
+        } catch (_: Exception) {
+            // Entornos sin hardware de audio (tests JVM / emulador sin salida)
+        }
+    }
+
     fun setSpeechRate(rate: Float) {
+        speechRateValue = rate
         tts?.setSpeechRate(rate)
     }
 

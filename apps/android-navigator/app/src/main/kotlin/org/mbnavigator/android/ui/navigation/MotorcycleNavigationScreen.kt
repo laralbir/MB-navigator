@@ -82,6 +82,7 @@ import org.mbnavigator.android.core.model.GeoPoint
 import org.mbnavigator.android.core.routing.ActiveRouteSession
 import org.mbnavigator.android.core.routing.GeocodedPlace
 import org.mbnavigator.android.core.routing.GpxKmlParser
+import org.mbnavigator.android.core.routing.HazardCategory
 import org.mbnavigator.android.core.routing.LiveNavigationProgress
 import org.mbnavigator.android.core.routing.MotorcycleRoutingProfile
 import org.mbnavigator.android.core.routing.NavigationDisplayCalculator
@@ -102,6 +103,8 @@ import org.mbnavigator.android.core.settings.RouteCalculationOptions
 import org.mbnavigator.android.core.settings.RouteTrackColor
 import org.mbnavigator.android.core.settings.rememberEffectiveMapStyle
 import org.mbnavigator.android.core.settings.rememberNavigatorPalette
+import org.mbnavigator.android.core.traffic.SafetyHazardAlertEngine
+import org.mbnavigator.android.core.traffic.UpcomingSafetyAlert
 import org.mbnavigator.android.core.voice.AndroidTextToSpeechService
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapListener
@@ -169,10 +172,14 @@ fun MotorcycleNavigationScreen(
     val autoRecalculate by AppPreferencesManager.autoRecalculateEnabled.collectAsState()
     val routeOptions by AppPreferencesManager.routeOptions.collectAsState()
     val favoriteDestinations by AppPreferencesManager.favoriteDestinations.collectAsState()
+    val voiceEnabled by AppPreferencesManager.voiceGuidanceEnabled.collectAsState()
+    val voiceSpeechRate by AppPreferencesManager.voiceSpeechRate.collectAsState()
+    val voiceLanguageTag by AppPreferencesManager.voiceLanguageTag.collectAsState()
+    val dgtAlertsEnabled by AppPreferencesManager.dgtAlertsEnabled.collectAsState()
+    val speedCameraAlertsEnabled by AppPreferencesManager.speedCameraAlertsEnabled.collectAsState()
 
     var hasLocationPermission by remember { mutableStateOf(locationTracker.hasPermission()) }
     var followGps by remember { mutableStateOf(true) }
-    var voiceEnabled by remember { mutableStateOf(true) }
     var selectedProfile by remember { mutableStateOf(MotorcycleRoutingProfile.CURVY) }
 
     var showSearchSheet by remember { mutableStateOf(false) }
@@ -186,6 +193,8 @@ fun MotorcycleNavigationScreen(
     var stableHeadingDegrees by remember { mutableFloatStateOf(0f) }
     var orientationAnimator by remember { mutableStateOf<ValueAnimator?>(null) }
     var trafficIncidents by remember { mutableStateOf<List<TrafficIncidentPoint>>(emptyList()) }
+    var activeSafetyAlert by remember { mutableStateOf<UpcomingSafetyAlert?>(null) }
+    val announcedSafetyAlertKeys = remember(activeRoute?.id) { mutableSetOf<String>() }
     var lastAppliedTrafficKey by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<GeocodedPlace>>(emptyList()) }
     var searchError by remember { mutableStateOf<String?>(null) }
@@ -197,6 +206,7 @@ fun MotorcycleNavigationScreen(
 
     var lastSpokenPrompt by remember(activeRoute?.id) { mutableStateOf<Pair<Int, Int>?>(null) }
     var lastRenderedRouteKey by remember { mutableStateOf<String?>(null) }
+    var lastFittedRouteId by remember { mutableStateOf<String?>(null) }
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -388,16 +398,88 @@ fun MotorcycleNavigationScreen(
         isAutoRecalculating = false
     }
 
-    // Capa de densidad e incidencias de tráfico abiertas DGT
-    LaunchedEffect(trafficLayerEnabled, activeRoute?.id, realLocation != null) {
-        if (!trafficLayerEnabled) {
+    // Sincronizar idioma y velocidad TTS persistidos
+    LaunchedEffect(voiceLanguageTag, voiceSpeechRate) {
+        val parts = voiceLanguageTag.split("-")
+        val locale = if (parts.size >= 2) Locale(parts[0], parts[1]) else Locale("es", "ES")
+        ttsService.setLanguage(locale)
+        ttsService.setSpeechRate(voiceSpeechRate)
+    }
+
+    // Ajuste suave automático a carreteras OSM si el track cargado tiene puntos muy espaciados
+    LaunchedEffect(activeRoute?.id) {
+        val route = activeRoute ?: return@LaunchedEffect
+        if (OpenRoutingClient.needsRoadSnapping(route.points)) {
+            val snapped = OpenRoutingClient.snapRouteToRoads(
+                points = route.points,
+                routeTitle = route.title,
+                viaPoints = route.waypoints,
+                profile = selectedProfile,
+                options = routeOptions
+            )
+            if (snapped != null && snapped.points.size > route.points.size) {
+                NavigationSessionRepository.applyRoadSnappedGeometry(route.id, snapped)
+            }
+        }
+    }
+
+    // Capa de densidad e incidencias DGT + radares (se consulta siempre que la capa visual o alguna alerta de seguridad estén activas)
+    LaunchedEffect(trafficLayerEnabled, dgtAlertsEnabled, speedCameraAlertsEnabled, activeRoute?.id, realLocation != null) {
+        if (!trafficLayerEnabled && !dgtAlertsEnabled && !speedCameraAlertsEnabled) {
             trafficIncidents = emptyList()
             return@LaunchedEffect
         }
         val center = realLocation
             ?: activeRoute?.points?.firstOrNull()
             ?: GeoPoint(40.4168, -3.7038)
-        trafficIncidents = TrafficDensityClient.fetchNearbyIncidents(center, radiusKm = 150.0)
+        trafficIncidents = TrafficDensityClient.fetchNearbyIncidents(
+            center = center,
+            radiusKm = 150.0,
+            includeSpeedCameras = speedCameraAlertsEnabled || trafficLayerEnabled
+        )
+    }
+
+    // Monitor continuo de seguridad (radares, vehículos averiados / V16, accidentes, obstáculos):
+    // Permanece activo incluso cuando el usuario desactiva la guía de giros por voz.
+    LaunchedEffect(
+        effectivePosition,
+        activeRoute?.points,
+        trafficIncidents,
+        dgtAlertsEnabled,
+        speedCameraAlertsEnabled,
+        navigationState
+    ) {
+        val pos = effectivePosition
+        if (pos == null || trafficIncidents.isEmpty()) {
+            activeSafetyAlert = null
+            return@LaunchedEffect
+        }
+        val routePts = activeRoute?.points
+        val alert = SafetyHazardAlertEngine.evaluateActiveHazard(
+            currentPosition = pos,
+            routePoints = routePts,
+            incidents = trafficIncidents,
+            dgtAlertsEnabled = dgtAlertsEnabled,
+            speedCameraAlertsEnabled = speedCameraAlertsEnabled
+        )
+        activeSafetyAlert = alert
+        if (alert != null &&
+            navigationState == NavigationRunState.NAVIGATING &&
+            SafetyHazardAlertEngine.shouldAnnounceSafetyAlert(
+                alert = alert,
+                dgtAlertsEnabled = dgtAlertsEnabled,
+                speedCameraAlertsEnabled = speedCameraAlertsEnabled,
+                announcedKeys = announcedSafetyAlertKeys
+            )
+        ) {
+            announcedSafetyAlertKeys.add(SafetyHazardAlertEngine.buildAlertDeduplicationKey(alert))
+            ttsService.playSafetyAlertTone(
+                urgent = alert.incident.category == HazardCategory.ACCIDENT ||
+                    alert.incident.category == HazardCategory.SPEED_CAMERA ||
+                    alert.incident.category == HazardCategory.BROKEN_DOWN_VEHICLE
+            )
+            ttsService.speak(SafetyHazardAlertEngine.formatHazardSpeech(alert), flushQueue = true)
+        }
     }
 
     // Dibujar / actualizar capas del mapa OSMDroid (estilo, tráfico, ruta, rotación y zoom por velocidad)
@@ -427,7 +509,7 @@ fun MotorcycleNavigationScreen(
         val overlaysChanged = (routeKey != lastRenderedRouteKey) || (trafficKey != lastAppliedTrafficKey)
 
         if (overlaysChanged) {
-            val structuralRouteChange = routeKey != lastRenderedRouteKey
+            val isNewRouteId = routeKey != null && activeRoute?.id != lastFittedRouteId
             lastRenderedRouteKey = routeKey
             lastAppliedTrafficKey = trafficKey
             val existingRotationOverlay = map.overlays.filterIsInstance<RotationGestureOverlay>().firstOrNull()
@@ -443,6 +525,7 @@ fun MotorcycleNavigationScreen(
 
                 val borderLine = Polyline(map).apply {
                     setPoints(osmPoints)
+                    outlinePaint.isAntiAlias = true
                     outlinePaint.color = android.graphics.Color.parseColor(routeColor.borderHex)
                     outlinePaint.strokeWidth = 22f
                     outlinePaint.strokeCap = Paint.Cap.ROUND
@@ -450,6 +533,7 @@ fun MotorcycleNavigationScreen(
                 }
                 val mainLine = Polyline(map).apply {
                     setPoints(osmPoints)
+                    outlinePaint.isAntiAlias = true
                     outlinePaint.color = android.graphics.Color.parseColor(routeColor.mainHex)
                     outlinePaint.strokeWidth = 13f
                     outlinePaint.strokeCap = Paint.Cap.ROUND
@@ -462,15 +546,12 @@ fun MotorcycleNavigationScreen(
                     val trafficSegs = TrafficDensityClient.buildRouteTrafficSegments(route.points, trafficIncidents)
                     trafficSegs.forEach { seg ->
                         val tLine = Polyline(map).apply {
-                            setPoints(
-                                listOf(
-                                    OsmGeoPoint(seg.start.latitude, seg.start.longitude),
-                                    OsmGeoPoint(seg.end.latitude, seg.end.longitude)
-                                )
-                            )
+                            setPoints(seg.points.map { OsmGeoPoint(it.latitude, it.longitude) })
+                            outlinePaint.isAntiAlias = true
                             outlinePaint.color = android.graphics.Color.parseColor(seg.level.colorHex)
                             outlinePaint.strokeWidth = 7f
                             outlinePaint.strokeCap = Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = Paint.Join.ROUND
                         }
                         map.overlays.add(tLine)
                     }
@@ -508,7 +589,8 @@ fun MotorcycleNavigationScreen(
                 }
                 map.overlays.add(endMarker)
 
-                if (structuralRouteChange) {
+                if (isNewRouteId) {
+                    lastFittedRouteId = route.id
                     if (osmPoints.size >= 2) {
                         val bbox = BoundingBox.fromGeoPoints(osmPoints)
                         map.post {
@@ -527,20 +609,34 @@ fun MotorcycleNavigationScreen(
                 }
             }
 
-            if (trafficLayerEnabled && trafficIncidents.isNotEmpty()) {
-                trafficIncidents.take(35).forEach { inc ->
-                    val incMarker = Marker(map).apply {
-                        position = OsmGeoPoint(inc.point.latitude, inc.point.longitude)
-                        title = "🚦 Tráfico ${inc.level.label}"
-                        snippet = inc.description
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        icon = createBadgeDrawable(
-                            context,
-                            "!",
-                            android.graphics.Color.parseColor(inc.level.colorHex)
-                        )
+            if (trafficIncidents.isNotEmpty()) {
+                trafficIncidents.take(45).forEach { inc ->
+                    val showThisIncident = when {
+                        inc.category == HazardCategory.SPEED_CAMERA -> speedCameraAlertsEnabled
+                        inc.category.isCriticalSafetyHazard -> trafficLayerEnabled || dgtAlertsEnabled
+                        else -> trafficLayerEnabled
                     }
-                    map.overlays.add(incMarker)
+                    if (showThisIncident) {
+                        val shortCode = when (inc.category) {
+                            HazardCategory.SPEED_CAMERA -> "R"
+                            HazardCategory.ACCIDENT -> "ACC"
+                            HazardCategory.BROKEN_DOWN_VEHICLE -> "V16"
+                            HazardCategory.ROAD_CLOSURE -> "X"
+                            else -> "!"
+                        }
+                        val incMarker = Marker(map).apply {
+                            position = OsmGeoPoint(inc.point.latitude, inc.point.longitude)
+                            title = "${inc.category.badgeIcon} ${inc.category.label}"
+                            snippet = inc.description
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            icon = createBadgeDrawable(
+                                context,
+                                shortCode,
+                                android.graphics.Color.parseColor(inc.category.colorHex)
+                            )
+                        }
+                        map.overlays.add(incMarker)
+                    }
                 }
             }
         }
@@ -725,10 +821,10 @@ fun MotorcycleNavigationScreen(
                         modifier = Modifier
                             .size(50.dp)
                             .clickable { onOpenHamburgerMenu() },
-                        color = palette.hudOverlay,
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.5.dp, palette.primary),
-                        shadowElevation = 4.dp
+                        color = palette.surface,
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, palette.border),
+                        shadowElevation = 6.dp
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
@@ -745,13 +841,13 @@ fun MotorcycleNavigationScreen(
                     modifier = Modifier
                         .height(50.dp)
                         .clickable { onOpenGpsDiagnostics() },
-                    color = palette.hudOverlay,
-                    shape = RoundedCornerShape(14.dp),
+                    color = palette.surface,
+                    shape = RoundedCornerShape(16.dp),
                     border = BorderStroke(
-                        1.5.dp,
-                        if (hasGpsFix) palette.success else palette.secondary
+                        1.dp,
+                        if (hasGpsFix) palette.success.copy(alpha = 0.55f) else palette.border
                     ),
-                    shadowElevation = 3.dp
+                    shadowElevation = 6.dp
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp),
@@ -934,15 +1030,60 @@ fun MotorcycleNavigationScreen(
             if (isAutoRecalculating) {
                 Surface(
                     color = palette.primary,
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(50)
                 ) {
                     Text(
                         text = "🔄 Recalculando en marcha...",
                         color = palette.onPrimary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     )
+                }
+            }
+            activeSafetyAlert?.let { alert ->
+                Surface(
+                    color = palette.surface,
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.5.dp, Color(android.graphics.Color.parseColor(alert.incident.category.colorHex))),
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(android.graphics.Color.parseColor(alert.incident.category.colorHex))),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = alert.incident.category.badgeIcon,
+                                fontSize = 19.sp
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${alert.incident.category.label} · ${alert.distanceMeters.roundToInt()} m",
+                                color = palette.textPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Text(
+                                text = alert.incident.description,
+                                color = palette.textSecondary,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -984,9 +1125,12 @@ fun MotorcycleNavigationScreen(
                 palette = palette,
                 borderColor = if (voiceEnabled) palette.primary else palette.danger
             ) {
-                voiceEnabled = !voiceEnabled
-                if (voiceEnabled) {
+                val next = !voiceEnabled
+                AppPreferencesManager.setVoiceGuidanceEnabled(next)
+                if (next) {
                     ttsService.speak("Indicaciones por voz activadas.")
+                } else {
+                    ttsService.stopSpeaking()
                 }
             }
         }
@@ -1156,10 +1300,10 @@ fun MotorcycleNavigationScreen(
                 verticalAlignment = Alignment.Bottom
             ) {
                 Surface(
-                    color = palette.hudOverlay,
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.5.dp, palette.border),
-                    shadowElevation = 5.dp,
+                    color = palette.surface,
+                    shape = RoundedCornerShape(22.dp),
+                    border = BorderStroke(1.dp, palette.border),
+                    shadowElevation = 8.dp,
                     modifier = Modifier.weight(1.1f)
                 ) {
                     Row(
@@ -1589,10 +1733,11 @@ private fun TurnByTurnBannerCard(
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (isOffRoute) offRouteContainer else palette.hudOverlay
+            containerColor = if (isOffRoute) offRouteContainer else palette.surface
         ),
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(2.dp, cardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.5.dp, cardBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(14.dp)) {

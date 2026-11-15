@@ -1,5 +1,6 @@
 package org.mbnavigator.android.ui.main
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -101,26 +102,49 @@ fun MainScreen(
     val isTripActiveInMap = selectedTab == AppTab.NAVIGATOR &&
         (navigationState == NavigationRunState.NAVIGATING || navigationState == NavigationRunState.PAUSED)
 
+    BackHandler(enabled = !drawerState.isClosed) {
+        scope.launch { drawerState.close() }
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = false,
+        // Bloqueado al estar cerrado para no robar gestos al mapa; habilitado al abrir para tocar el fondo o deslizar para cerrar
+        gesturesEnabled = !drawerState.isClosed,
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = palette.surface,
                 drawerContentColor = palette.textPrimary
             ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp)) {
-                    Text(
-                        text = "MB-navigator",
-                        color = palette.primary,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Black
-                    )
-                    Text(
-                        text = activeRoute?.title ?: "Menú de navegación",
-                        color = palette.textSecondary,
-                        fontSize = 12.sp
-                    )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "MB-navigator",
+                            color = palette.primary,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                        Text(
+                            text = activeRoute?.title ?: "Menú de navegación",
+                            color = palette.textSecondary,
+                            fontSize = 12.sp
+                        )
+                    }
+                    TextButton(
+                        onClick = { scope.launch { drawerState.close() } }
+                    ) {
+                        Text(
+                            text = "✕",
+                            color = palette.textPrimary,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
                 HorizontalDivider(color = palette.border)
                 Spacer(modifier = Modifier.height(8.dp))

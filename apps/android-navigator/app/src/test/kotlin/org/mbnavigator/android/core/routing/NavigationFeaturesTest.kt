@@ -2,9 +2,13 @@ package org.mbnavigator.android.core.routing
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mbnavigator.android.core.model.GeoPoint
+import org.mbnavigator.android.core.settings.AppPreferencesManager
+import org.mbnavigator.android.core.traffic.SafetyHazardAlertEngine
 
 class NavigationFeaturesTest {
 
@@ -122,5 +126,108 @@ class NavigationFeaturesTest {
 
         NavigationSessionRepository.clearActiveRoute()
         assertEquals(NavigationRunState.IDLE, NavigationSessionRepository.navigationState.value)
+    }
+
+    @Test
+    fun `voice guidance toggle persists false state without resetting`() {
+        AppPreferencesManager.setVoiceGuidanceEnabled(false)
+        assertFalse(AppPreferencesManager.voiceGuidanceEnabled.value)
+
+        // Cambiar preferencias de seguridad o tráfico no reactiva la voz de giros
+        AppPreferencesManager.setDgtAlertsEnabled(true)
+        AppPreferencesManager.setSpeedCameraAlertsEnabled(true)
+        assertFalse(AppPreferencesManager.voiceGuidanceEnabled.value)
+
+        AppPreferencesManager.setVoiceGuidanceEnabled(true)
+        assertTrue(AppPreferencesManager.voiceGuidanceEnabled.value)
+    }
+
+    @Test
+    fun `safety alerts for radars, broken down vehicles and accidents trigger even with muted voice`() {
+        AppPreferencesManager.setVoiceGuidanceEnabled(false)
+
+        val brokenDownXml = """
+            <d2:payload>
+              <sit:situation id="v16">
+                <sit:situationRecord id="veh1" version="1">
+                  <sit:causeType>vehicleObstruction</sit:causeType>
+                  <sit:vehicleObstructionType>vehicleStuck</sit:vehicleObstructionType>
+                  <sit:overallSeverity>medium</sit:overallSeverity>
+                  <loc:roadName>N-340</loc:roadName>
+                  <loc:latitude>40.4020</loc:latitude>
+                  <loc:longitude>-3.7000</loc:longitude>
+                </sit:situationRecord>
+              </sit:situation>
+            </d2:payload>
+        """.trimIndent()
+        val incidents = TrafficDensityClient.parseDgtDatexXmlStream(brokenDownXml)
+        assertEquals(1, incidents.size)
+        assertEquals(HazardCategory.BROKEN_DOWN_VEHICLE, incidents.first().category)
+
+        val radar = TrafficIncidentPoint(
+            id = "cam-100",
+            point = GeoPoint(40.4015, -3.7000),
+            level = TrafficDensityLevel.BLOCKED,
+            roadName = "A-1",
+            description = "A-1 · Radar 120 km/h",
+            category = HazardCategory.SPEED_CAMERA,
+            speedLimitKmh = 120
+        )
+
+        val currentPos = GeoPoint(40.4000, -3.7000)
+        val alert = SafetyHazardAlertEngine.evaluateActiveHazard(
+            currentPosition = currentPos,
+            routePoints = listOf(currentPos, GeoPoint(40.4050, -3.7000)),
+            incidents = incidents + radar,
+            dgtAlertsEnabled = true,
+            speedCameraAlertsEnabled = true
+        )
+        assertNotNull(alert)
+        assertEquals(HazardCategory.BROKEN_DOWN_VEHICLE, alert!!.incident.category)
+        assertTrue(
+            SafetyHazardAlertEngine.shouldAnnounceSafetyAlert(
+                alert = alert,
+                dgtAlertsEnabled = true,
+                speedCameraAlertsEnabled = true,
+                announcedKeys = emptySet()
+            )
+        )
+        assertTrue(SafetyHazardAlertEngine.formatHazardSpeech(alert).contains("vehículo averiado"))
+
+        val suppressedDgtAlert = SafetyHazardAlertEngine.evaluateActiveHazard(
+            currentPosition = currentPos,
+            routePoints = null,
+            incidents = incidents,
+            dgtAlertsEnabled = false,
+            speedCameraAlertsEnabled = true
+        )
+        assertNull(suppressedDgtAlert)
+
+        val radarAlert = SafetyHazardAlertEngine.evaluateActiveHazard(
+            currentPosition = currentPos,
+            routePoints = null,
+            incidents = listOf(radar),
+            dgtAlertsEnabled = false,
+            speedCameraAlertsEnabled = true
+        )
+        assertNotNull(radarAlert)
+        assertTrue(SafetyHazardAlertEngine.formatHazardSpeech(radarAlert!!).contains("120"))
+
+        AppPreferencesManager.setVoiceGuidanceEnabled(true)
+    }
+
+    @Test
+    fun `traffic segments preserve intermediate curve vertices and road snapping detects sparse tracks`() {
+        // 300 puntos muy juntos (~20 m) no deben necesitar snap; 3 puntos distantes (> 1 km) sí
+        val sparse = listOf(GeoPoint(40.72, -4.00), GeoPoint(40.79, -4.00), GeoPoint(40.82, -3.96))
+        assertTrue(OpenRoutingClient.needsRoadSnapping(sparse))
+
+        val dense = (0..100).map { i -> GeoPoint(40.4000 + i * 0.0002, -3.7000) }
+        assertFalse(OpenRoutingClient.needsRoadSnapping(dense))
+
+        // Con 250 puntos y stride = 2, cada TrafficSegmentColor ha de conservar vértices intermedios (>2)
+        val curvedDense = (0..250).map { i -> GeoPoint(40.4000 + i * 0.0002, -3.7000 + (i % 5) * 0.0001) }
+        val segs = TrafficDensityClient.buildRouteTrafficSegments(curvedDense, emptyList())
+        assertTrue(segs.first().points.size >= 3)
     }
 }
