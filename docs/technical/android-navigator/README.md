@@ -7,12 +7,20 @@
 
 ## 2. Pila Tecnológica (Tech Stack)
 - **Lenguaje**: Kotlin (versión más reciente con soporte coroutines y Flow).
-- **Interfaz**: Jetpack Compose con Material Design 3.
+- **Interfaz**: Jetpack Compose con Material Design 3 + Lottie Compose + Haze (efecto glassmorphism).
+- **Vehículo**: Android for Cars App Library (`androidx.car.app`) para compatibilidad nativa con Android Auto.
 - **Arquitectura**: Clean Architecture + MVI (Model-View-Intent).
 - **Inyección de Dependencias**: Hilt / Koin.
-- **Motor de Mapas**: MapLibre Native SDK for Android / `maplibre-compose`.
-- **Base de Datos Local**: Room (para waypoints, rutas almacenadas y metadatos de mapas descargados).
+- **Motor de Mapas**: MapLibre Native SDK for Android / `maplibre-compose` con soporte offline de PMTiles/MBTiles.
+- **Motor de Ruteo**: BRouter (offline, ruteo por waypoints obligatorios y recálculo automático de desvíos).
+- **Base de Datos Local**: Room (para waypoints, rutas almacenadas, telemetría y base de datos offline de radares).
+- **Servicios Externos Abiertos**:
+  - DGT 3.0 / Punto de Acceso Nacional de Tráfico (DATEX II para balizas V16 e incidencias).
+  - Open-Meteo API (predicción meteorológica horaria por coordenadas sin API key).
+  - AEMET OpenData (avisos del Plan Meteoalerta: Amarillo, Naranja, Rojo).
+  - Google Gemini API / Gemini Nano (módulo de IA opcional y configurable para resúmenes conversacionales).
 - **Procesamiento de Ubicación**: Abstracción sobre `LocationManager` y `FusedLocationProviderClient`.
+
 
 ---
 

@@ -35,6 +35,47 @@ Para utilizar la aplicación en zonas montañosas o sin cobertura:
 ## 4. Importar y Seguir una Ruta (GPX / KML)
 
 1. Ve a **Mis Rutas** > **Importar**.
-2. Selecciona el archivo `.gpx` o `.kml` desde el explorador de archivos de tu dispositivo o compártelo directamente desde tu aplicación de mensajería hacia MB-navigator.
-3. Pulsa sobre la ruta y selecciona **Iniciar Navegación**.
-4. La pantalla orientará el mapa automáticamente en la dirección de avance y te alertará si te desvías del trazado planificado.
+2. Selecciona el archivo `.gpx`, `.kml` o `.geojson` desde el explorador de archivos de tu dispositivo o compártelo directamente desde tu aplicación de mensajería hacia MB-navigator.
+3. Puedes añadir o reordenar **Puntos de Interés (Waypoints obligatorios)** por los que la ruta debe pasar necesariamente.
+4. Pulsa sobre la ruta y selecciona **Iniciar Navegación**.
+5. La pantalla orientará el mapa automáticamente en la dirección de avance y te alertará si te desvías del trazado planificado.
+
+---
+
+## 5. Compatibilidad con Android Auto
+
+1. Conecta tu teléfono mediante cable USB o conexión inalámbrica a la unidad compatible con **Android Auto** de tu vehículo.
+2. Abre **MB-navigator** directamente desde la pantalla táctil de tu salpicadero.
+3. La interfaz se adaptará automáticamente al formato vehicular (`NavigationTemplate`), permitiendo:
+   - Control de maniobras sin distracciones con los mandos físicos del volante o la pantalla táctil.
+   - Resumen del próximo giro en el panel de instrumentos (si el vehículo lo soporta).
+
+---
+
+## 6. Meteorología por Tramo y Alertas en Ruta (AEMET & Open-Meteo)
+
+Durante la planificación o seguimiento de una ruta:
+1. La aplicación calcula tu **hora estimada de paso** por cada tramo del itinerario.
+2. Consulta en tiempo real las condiciones previstas para ese instante exacto (temperatura, lluvia, viento y niebla con Open-Meteo).
+3. Si existe una alerta oficial de AEMET activa:
+   - **Aviso Amarillo**: Indicador visual informativo.
+   - **Aviso Naranja / Rojo**: Alerta prioritaria por voz y sugerencia en pantalla de una ruta alternativa más segura (por ejemplo, evitando puertos de montaña con riesgo de nevadas).
+
+---
+
+## 7. Tráfico, Radares e Incidencias en Vivo (DGT 3.0)
+
+- **Balizas V16 y Vehículos Detenidos**: Conexión directa con la plataforma DGT 3.0 para avisarte con suficiente antelación de obstáculos o vehículos averiados en tu carril o arcén.
+- **Radares**: Advertencias visuales y sonoras progresivas de radares fijos, de tramo y zonas de control habitual.
+- **Límites de Velocidad**: Indicador visual permanente del límite legal de la vía (`maxspeed`) y aviso configurable si se supera.
+
+---
+
+## 8. Asistente Inteligente con IA (Google Gemini - Opcional)
+
+En **Ajustes > Inteligencia Artificial**, puedes elegir:
+- **Modo Offline Puro**: Sin envío de datos externos; el navegador funciona de forma 100% privada con reglas internas.
+- **Modo Gemini API**: Introduce tu propia API Key para disponer de un copiloto conversacional que puede:
+  - Resumirte las condiciones del viaje antes de salir.
+  - Responder a preguntas complejas por voz (*"¿Dónde puedo parar a cargar gasolina antes de que empiece a llover?"*).
+
