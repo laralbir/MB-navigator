@@ -25,6 +25,28 @@ object NavigationDisplayCalculator {
         return abs(currentZoom - targetZoom) >= MIN_ZOOM_DELTA_THRESHOLD
     }
 
+    fun normalizeAngle360(degrees: Float): Float {
+        val rem = degrees % 360f
+        return if (rem < 0f) rem + 360f else rem
+    }
+
+    /**
+     * Calcula el desplazamiento angular más corto [-180, +180] evitando giros completos
+     * al cruzar el norte geográfico (359° -> 1° = +2° en lugar de -358°).
+     */
+    fun shortestAngleDeltaDegrees(fromDegrees: Float, toDegrees: Float): Float {
+        val from = normalizeAngle360(fromDegrees)
+        val to = normalizeAngle360(toDegrees)
+        var delta = to - from
+        if (delta > 180f) delta -= 360f
+        if (delta < -180f) delta += 360f
+        return delta
+    }
+
+    fun shouldUpdateHeadingBearing(speedKmh: Float, isSimulation: Boolean): Boolean {
+        return isSimulation || speedKmh >= 6.0f
+    }
+
     private fun interpolate(
         value: Float,
         minSpeed: Float,

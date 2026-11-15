@@ -1,6 +1,8 @@
 package org.mbnavigator.android.ui.navigation
 
 import android.Manifest
+import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -10,6 +12,8 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
+import android.view.MotionEvent
+import android.view.animation.DecelerateInterpolator
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -49,6 +53,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -109,6 +114,7 @@ import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
 import java.util.Locale
 import kotlin.math.roundToInt
 import org.osmdroid.util.GeoPoint as OsmGeoPoint
@@ -176,6 +182,9 @@ fun MotorcycleNavigationScreen(
     var isAutoRecalculating by remember { mutableStateOf(false) }
     var lastAutoRecalcAtMs by remember { mutableLongStateOf(0L) }
     var manualZoomPauseUntilMs by remember { mutableLongStateOf(0L) }
+    var isUserTouchingMap by remember { mutableStateOf(false) }
+    var stableHeadingDegrees by remember { mutableFloatStateOf(0f) }
+    var orientationAnimator by remember { mutableStateOf<ValueAnimator?>(null) }
     var trafficIncidents by remember { mutableStateOf<List<TrafficIncidentPoint>>(emptyList()) }
     var lastAppliedTrafficKey by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<GeocodedPlace>>(emptyList()) }
@@ -421,7 +430,12 @@ fun MotorcycleNavigationScreen(
             val structuralRouteChange = routeKey != lastRenderedRouteKey
             lastRenderedRouteKey = routeKey
             lastAppliedTrafficKey = trafficKey
+            val existingRotationOverlay = map.overlays.filterIsInstance<RotationGestureOverlay>().firstOrNull()
             map.overlays.clear()
+            val rotOverlay = existingRotationOverlay ?: RotationGestureOverlay(map).apply {
+                isEnabled = true
+            }
+            map.overlays.add(rotOverlay)
 
             val route = activeRoute
             if (route != null && route.points.isNotEmpty()) {
@@ -533,10 +547,18 @@ fun MotorcycleNavigationScreen(
 
         val cursorTag = "MOTO_CURSOR"
         val existingCursor = map.overlays.filterIsInstance<Marker>().find { it.id == cursorTag }
-        val bearing = if (activeRoute?.isPreviewSimulation == true) {
+        val isSimulation = activeRoute?.isPreviewSimulation == true
+        val rawBearing = if (isSimulation) {
             computePreviewBearing(activeRoute, previewIndex)
         } else {
-            effectivePosition?.bearingDegrees ?: 0f
+            effectivePosition?.bearingDegrees ?: stableHeadingDegrees
+        }
+
+        if (NavigationDisplayCalculator.shouldUpdateHeadingBearing(effectiveSpeedKmh, isSimulation)) {
+            val headingDelta = NavigationDisplayCalculator.shortestAngleDeltaDegrees(stableHeadingDegrees, rawBearing)
+            if (kotlin.math.abs(headingDelta) >= 3.5f) {
+                stableHeadingDegrees = NavigationDisplayCalculator.normalizeAngle360(stableHeadingDegrees + headingDelta)
+            }
         }
 
         if (effectivePosition != null) {
@@ -552,35 +574,71 @@ fun MotorcycleNavigationScreen(
             }
             cursorMarker.isFlat = true
             cursorMarker.position = posOsm
-            cursorMarker.rotation = -bearing
+            cursorMarker.rotation = -stableHeadingDegrees
 
-            if (followGps) {
-                map.controller.animateTo(posOsm)
-
+            if (followGps && !isUserTouchingMap) {
                 val targetOrientation = if (mapOrientationMode == MapOrientationMode.COURSE_UP) {
-                    -bearing
+                    -stableHeadingDegrees
                 } else {
                     0f
                 }
-                if (kotlin.math.abs(map.mapOrientation - targetOrientation) > 2f) {
-                    map.mapOrientation = targetOrientation
+                val orientationDelta = NavigationDisplayCalculator.shortestAngleDeltaDegrees(
+                    map.mapOrientation,
+                    targetOrientation
+                )
+                if (kotlin.math.abs(orientationDelta) >= 2.5f) {
+                    orientationAnimator?.cancel()
+                    val startAngle = map.mapOrientation
+                    orientationAnimator = ValueAnimator.ofFloat(startAngle, startAngle + orientationDelta).apply {
+                        duration = 380L
+                        interpolator = DecelerateInterpolator()
+                        addUpdateListener { anim ->
+                            map.mapOrientation = anim.animatedValue as Float
+                            map.invalidate()
+                        }
+                        start()
+                    }
                 }
 
                 val nowMs = System.currentTimeMillis()
-                if (speedAutoZoom &&
+                val desiredZoom = if (speedAutoZoom &&
                     navigationState == NavigationRunState.NAVIGATING &&
                     nowMs > manualZoomPauseUntilMs
                 ) {
-                    val targetZoom = NavigationDisplayCalculator.computeTargetZoomForSpeed(effectiveSpeedKmh)
-                    if (NavigationDisplayCalculator.shouldUpdateAutoZoom(map.zoomLevelDouble, targetZoom)) {
-                        map.controller.setZoom(targetZoom)
+                    val computed = NavigationDisplayCalculator.computeTargetZoomForSpeed(effectiveSpeedKmh)
+                    if (NavigationDisplayCalculator.shouldUpdateAutoZoom(map.zoomLevelDouble, computed)) {
+                        computed
+                    } else {
+                        null
                     }
                 } else if (map.zoomLevelDouble < 14.0 && !overlaysChanged) {
-                    map.controller.setZoom(15.5)
+                    15.5
+                } else {
+                    null
+                }
+
+                if (desiredZoom != null) {
+                    map.controller.animateTo(posOsm, desiredZoom, 450L)
+                } else {
+                    map.controller.animateTo(posOsm, map.zoomLevelDouble, 420L)
                 }
             }
-        } else if (mapOrientationMode == MapOrientationMode.NORTH_UP && map.mapOrientation != 0f) {
-            map.mapOrientation = 0f
+        } else if (mapOrientationMode == MapOrientationMode.NORTH_UP &&
+            !isUserTouchingMap &&
+            kotlin.math.abs(NavigationDisplayCalculator.shortestAngleDeltaDegrees(map.mapOrientation, 0f)) >= 1.5f
+        ) {
+            orientationAnimator?.cancel()
+            val startAngle = map.mapOrientation
+            val delta = NavigationDisplayCalculator.shortestAngleDeltaDegrees(startAngle, 0f)
+            orientationAnimator = ValueAnimator.ofFloat(startAngle, startAngle + delta).apply {
+                duration = 350L
+                interpolator = DecelerateInterpolator()
+                addUpdateListener { anim ->
+                    map.mapOrientation = anim.animatedValue as Float
+                    map.invalidate()
+                }
+                start()
+            }
         }
         map.invalidate()
     }
@@ -599,6 +657,7 @@ fun MotorcycleNavigationScreen(
                     load(ctx.applicationContext, ctx.getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
                     userAgentValue = "MBNavigator-MotoGPS/1.0"
                 }
+                @SuppressLint("ClickableViewAccessibility")
                 MapView(ctx).apply {
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
@@ -606,6 +665,31 @@ fun MotorcycleNavigationScreen(
                     controller.setZoom(6.5)
                     controller.setCenter(OsmGeoPoint(40.4168, -3.7038))
                     applyMapVisualStyle(this, effectiveMapStyle)
+
+                    val rotationOverlay = RotationGestureOverlay(this).apply {
+                        isEnabled = true
+                    }
+                    overlays.add(rotationOverlay)
+
+                    // Ceder control táctil de inmediato al primer toque para mover/zoom/girar el mapa incluso navegando
+                    setOnTouchListener { _, event ->
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN,
+                            MotionEvent.ACTION_POINTER_DOWN,
+                            MotionEvent.ACTION_MOVE -> {
+                                isUserTouchingMap = true
+                                followGps = false
+                                manualZoomPauseUntilMs = System.currentTimeMillis() + 12_000L
+                                controller.stopAnimation(false)
+                                orientationAnimator?.cancel()
+                            }
+                            MotionEvent.ACTION_UP,
+                            MotionEvent.ACTION_CANCEL -> {
+                                isUserTouchingMap = false
+                            }
+                        }
+                        false
+                    }
 
                     addMapListener(object : MapListener {
                         override fun onScroll(event: ScrollEvent?): Boolean {
@@ -847,42 +931,18 @@ fun MotorcycleNavigationScreen(
                     }
                 }
             }
-            if (trafficLayerEnabled || isAutoRecalculating) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            if (isAutoRecalculating) {
+                Surface(
+                    color = palette.primary,
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    if (trafficLayerEnabled) {
-                        Surface(
-                            color = palette.hudOverlay,
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, palette.border),
-                            shadowElevation = 2.dp
-                        ) {
-                            Text(
-                                text = "🚦 Tráfico: 🟢 Fluido · 🟡 Denso · 🔴 Retención (${trafficIncidents.size})",
-                                color = palette.textSecondary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                            )
-                        }
-                    }
-                    if (isAutoRecalculating) {
-                        Surface(
-                            color = palette.primary,
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(
-                                text = "🔄 Recalculando en marcha...",
-                                color = palette.onPrimary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                            )
-                        }
-                    }
+                    Text(
+                        text = "🔄 Recalculando en marcha...",
+                        color = palette.onPrimary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
                 }
             }
         }

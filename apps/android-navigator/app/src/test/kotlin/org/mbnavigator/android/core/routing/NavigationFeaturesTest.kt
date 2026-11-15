@@ -29,6 +29,16 @@ class NavigationFeaturesTest {
     }
 
     @Test
+    fun `shortest angle delta wraps smoothly across north boundary`() {
+        assertEquals(2f, NavigationDisplayCalculator.shortestAngleDeltaDegrees(359f, 1f), 0.01f)
+        assertEquals(-2f, NavigationDisplayCalculator.shortestAngleDeltaDegrees(1f, 359f), 0.01f)
+        assertEquals(-90f, NavigationDisplayCalculator.shortestAngleDeltaDegrees(180f, 90f), 0.01f)
+        assertFalse(NavigationDisplayCalculator.shouldUpdateHeadingBearing(2f, isSimulation = false))
+        assertTrue(NavigationDisplayCalculator.shouldUpdateHeadingBearing(15f, isSimulation = false))
+        assertTrue(NavigationDisplayCalculator.shouldUpdateHeadingBearing(0f, isSimulation = true))
+    }
+
+    @Test
     fun `valhalla polyline6 decoder decodes coordinates cleanly`() {
         // Dos puntos cercanos encodeados en precision 1e-6: (40.4168, -3.7038) -> (40.4200, -3.7000)
         // Verificamos estabilidad con polyline vacío y cadena válida conocida
