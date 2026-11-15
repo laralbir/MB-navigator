@@ -6,6 +6,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mbnavigator.android.core.location.LocationStabilizer
 import org.mbnavigator.android.core.model.GeoPoint
 import org.mbnavigator.android.core.settings.AppPreferencesManager
 import org.mbnavigator.android.core.traffic.SafetyHazardAlertEngine
@@ -229,5 +230,66 @@ class NavigationFeaturesTest {
         val curvedDense = (0..250).map { i -> GeoPoint(40.4000 + i * 0.0002, -3.7000 + (i % 5) * 0.0001) }
         val segs = TrafficDensityClient.buildRouteTrafficSegments(curvedDense, emptyList())
         assertTrue(segs.first().points.size >= 3)
+    }
+
+    @Test
+    fun `location stabilizer freezes cursor when stationary and ignores coarse network jumps`() {
+        val t0 = 1_700_000_000_000L
+        val anchor = GeoPoint(
+            latitude = 40.41680,
+            longitude = -3.70380,
+            speedMps = 0.2f,
+            bearingDegrees = 90f,
+            accuracyMeters = 5f
+        )
+
+        val first = LocationStabilizer.stabilize(
+            previousAnchored = null,
+            lastAccurateFixMs = 0L,
+            candidate = anchor,
+            provider = "gps",
+            nowMs = t0
+        )
+        assertTrue(first.moved)
+        assertEquals(0f, first.location.speedMps ?: -1f, 0.01f)
+
+        // Deriva estática de ~3 m y velocidad residual 0.5 m/s -> el cursor permanece anclado sin moverse
+        val jitter = anchor.copy(latitude = 40.416825, longitude = -3.703815, speedMps = 0.5f, bearingDegrees = 210f)
+        val frozen = LocationStabilizer.stabilize(
+            previousAnchored = first.location,
+            lastAccurateFixMs = first.lastAccurateFixMs,
+            candidate = jitter,
+            provider = "gps",
+            nowMs = t0 + 1000L
+        )
+        assertFalse(frozen.moved)
+        assertEquals(40.41680, frozen.location.latitude, 0.000001)
+        assertEquals(-3.70380, frozen.location.longitude, 0.000001)
+        assertEquals(90f, frozen.location.bearingDegrees ?: -1f, 0.01f)
+
+        // Salto impreciso de antena de red (~120 m) mientras hay fix GPS reciente -> ignorado
+        val networkJump = GeoPoint(40.41790, -3.70250, speedMps = 0f, accuracyMeters = 80f)
+        val ignoredNet = LocationStabilizer.stabilize(
+            previousAnchored = frozen.location,
+            lastAccurateFixMs = frozen.lastAccurateFixMs,
+            candidate = networkJump,
+            provider = "network",
+            nowMs = t0 + 3000L
+        )
+        assertFalse(ignoredNet.moved)
+        assertEquals(40.41680, ignoredNet.location.latitude, 0.000001)
+
+        // Arranca en moto (8 m/s ~ 29 km/h, precisión 4 m) -> el cursor avanza normalmente
+        val moving = GeoPoint(40.41710, -3.70350, speedMps = 8.0f, bearingDegrees = 45f, accuracyMeters = 4f)
+        val progressed = LocationStabilizer.stabilize(
+            previousAnchored = ignoredNet.location,
+            lastAccurateFixMs = ignoredNet.lastAccurateFixMs,
+            candidate = moving,
+            provider = "fused",
+            nowMs = t0 + 5000L
+        )
+        assertTrue(progressed.moved)
+        assertEquals(40.41710, progressed.location.latitude, 0.000001)
+        assertEquals(45f, progressed.location.bearingDegrees ?: -1f, 0.01f)
     }
 }

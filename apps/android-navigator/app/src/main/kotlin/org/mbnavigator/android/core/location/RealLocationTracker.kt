@@ -7,6 +7,8 @@ import android.location.GnssStatus
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.location.LocationRequest
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -70,6 +72,9 @@ class RealLocationTracker(
     )
     val gnssSummary: StateFlow<GnssStatusSummary> = _gnssSummary.asStateFlow()
 
+    @Volatile
+    private var lastAccurateFixMs: Long = 0L
+
     private val gnssCallback = object : GnssStatus.Callback() {
         override fun onSatelliteStatusChanged(status: GnssStatus) {
             val count = status.satelliteCount
@@ -118,8 +123,14 @@ class RealLocationTracker(
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
-            _hasGpsFix.value = true
-            _currentLocation.value = GeoPoint(
+            val provider = location.provider ?: LocationManager.GPS_PROVIDER
+            val isPreciseSource = provider != LocationManager.NETWORK_PROVIDER &&
+                (!location.hasAccuracy() || location.accuracy <= 35f)
+            if (isPreciseSource) {
+                _hasGpsFix.value = true
+            }
+
+            val candidate = GeoPoint(
                 latitude = location.latitude,
                 longitude = location.longitude,
                 elevationMeters = if (location.hasAltitude()) location.altitude else null,
@@ -128,6 +139,16 @@ class RealLocationTracker(
                 bearingDegrees = if (location.hasBearing()) location.bearing else 0f,
                 accuracyMeters = if (location.hasAccuracy()) location.accuracy else null
             )
+
+            val stabilized = LocationStabilizer.stabilize(
+                previousAnchored = _currentLocation.value,
+                lastAccurateFixMs = lastAccurateFixMs,
+                candidate = candidate,
+                provider = provider,
+                nowMs = System.currentTimeMillis()
+            )
+            lastAccurateFixMs = stabilized.lastAccurateFixMs
+            _currentLocation.value = stabilized.location
         }
 
         @Deprecated("Deprecated in Java")
@@ -149,46 +170,67 @@ class RealLocationTracker(
 
     @SuppressLint("MissingPermission")
     override fun startTracking() {
-        if (!hasPermission() || locationManager == null) return
+        val lm = locationManager
+        if (!hasPermission() || lm == null) return
 
         _isTrackingActive.value = true
 
-        // 1. Obtener última posición conocida de forma inmediata
-        val lastGps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-        val lastNet = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-        val bestLast = lastGps ?: lastNet
+        // 1. Obtener última posición precisa conocida (priorizando Fused/GPS sobre Red)
+        val lastFused = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching { lm.getLastKnownLocation(LocationManager.FUSED_PROVIDER) }.getOrNull()
+        } else {
+            null
+        }
+        val lastGps = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+        val lastNet = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+        val bestLast = lastGps ?: lastFused ?: lastNet
 
         if (bestLast != null) {
-            _currentLocation.value = GeoPoint(
-                latitude = bestLast.latitude,
-                longitude = bestLast.longitude,
-                elevationMeters = if (bestLast.hasAltitude()) bestLast.altitude else null,
-                timestamp = Instant.ofEpochMilli(bestLast.time),
-                speedMps = if (bestLast.hasSpeed()) bestLast.speed else 0f,
-                bearingDegrees = if (bestLast.hasBearing()) bestLast.bearing else 0f,
-                accuracyMeters = if (bestLast.hasAccuracy()) bestLast.accuracy else null
+            val stabilized = LocationStabilizer.stabilize(
+                previousAnchored = _currentLocation.value,
+                lastAccurateFixMs = lastAccurateFixMs,
+                candidate = GeoPoint(
+                    latitude = bestLast.latitude,
+                    longitude = bestLast.longitude,
+                    elevationMeters = if (bestLast.hasAltitude()) bestLast.altitude else null,
+                    timestamp = Instant.ofEpochMilli(bestLast.time),
+                    speedMps = if (bestLast.hasSpeed()) bestLast.speed else 0f,
+                    bearingDegrees = if (bestLast.hasBearing()) bestLast.bearing else 0f,
+                    accuracyMeters = if (bestLast.hasAccuracy()) bestLast.accuracy else null
+                ),
+                provider = bestLast.provider ?: LocationManager.GPS_PROVIDER,
+                nowMs = System.currentTimeMillis()
             )
+            lastAccurateFixMs = stabilized.lastAccurateFixMs
+            _currentLocation.value = stabilized.location
         }
 
-        // 2. Solicitar actualizaciones continuas (cada 1 segundo o 1 metro) y estado GNSS
+        // 2. Solicitar ubicación de alta precisión (FUSED HIGH_ACCURACY en Android 12+ y GPS hardware)
         try {
-            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                lm.allProviders.contains(LocationManager.FUSED_PROVIDER)
+            ) {
+                val request = LocationRequest.Builder(1000L)
+                    .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
+                    .setMinUpdateIntervalMillis(500L)
+                    .setMinUpdateDistanceMeters(0f)
+                    .build()
+                lm.requestLocationUpdates(
+                    LocationManager.FUSED_PROVIDER,
+                    request,
+                    context.mainExecutor,
+                    locationListener
+                )
+            }
+            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                lm.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER,
                     1000L,
-                    1.0f,
+                    0f,
                     locationListener
                 )
             }
-            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                locationManager.requestLocationUpdates(
-                    LocationManager.NETWORK_PROVIDER,
-                    2000L,
-                    5.0f,
-                    locationListener
-                )
-            }
-            locationManager.registerGnssStatusCallback(gnssCallback, Handler(Looper.getMainLooper()))
+            lm.registerGnssStatusCallback(gnssCallback, Handler(Looper.getMainLooper()))
         } catch (_: SecurityException) {}
     }
 

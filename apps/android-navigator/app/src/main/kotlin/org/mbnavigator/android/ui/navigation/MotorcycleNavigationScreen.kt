@@ -208,15 +208,15 @@ fun MotorcycleNavigationScreen(
     var lastSpokenPrompt by remember(activeRoute?.id) { mutableStateOf<Pair<Int, Int>?>(null) }
     var lastRenderedRouteKey by remember { mutableStateOf<String?>(null) }
     var lastFittedRouteId by remember { mutableStateOf<String?>(null) }
+    var lastCenteredOsm by remember { mutableStateOf<OsmGeoPoint?>(null) }
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        hasLocationPermission = granted
-        if (granted) {
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        hasLocationPermission = fineGranted
+        if (fineGranted) {
             locationTracker.startTracking()
         }
     }
@@ -714,10 +714,15 @@ fun MotorcycleNavigationScreen(
                     null
                 }
 
+                val posChangedMeaningfully = lastCenteredOsm == null ||
+                    lastCenteredOsm!!.distanceToAsDouble(posOsm) >= 1.5
+
                 if (desiredZoom != null) {
                     map.controller.animateTo(posOsm, desiredZoom, 450L)
-                } else {
+                    lastCenteredOsm = posOsm
+                } else if (posChangedMeaningfully) {
                     map.controller.animateTo(posOsm, map.zoomLevelDouble, 420L)
+                    lastCenteredOsm = posOsm
                 }
             }
         } else if (mapOrientationMode == MapOrientationMode.NORTH_UP &&
@@ -1397,6 +1402,7 @@ fun MotorcycleNavigationScreen(
                     onClick = {
                         followGps = true
                         manualZoomPauseUntilMs = 0L
+                        lastCenteredOsm = null
                         val target = effectivePosition ?: activeRoute?.points?.firstOrNull()
                         if (target != null) {
                             mapViewRef?.controller?.animateTo(OsmGeoPoint(target.latitude, target.longitude))
