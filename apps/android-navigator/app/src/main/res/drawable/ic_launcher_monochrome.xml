@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Carretera de curvas monocromática -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 28,78 C 34,70 36,54 52,54 C 68,54 74,40 78,30" />
+
+    <!-- Moto en curva monocromática -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:pathData="M 37, 65 m -6, 0 a 6,6 0 1,0 12,0 a 6,6 0 1,0 -12,0" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:pathData="M 69, 45 m -6, 0 a 6,6 0 1,0 12,0 a 6,6 0 1,0 -12,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 37,65 L 47,58 L 52,48 L 59,48 L 63,44 L 68,44 L 69,45 L 61,54 L 51,60 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 52, 42 m -4.5, 0 a 4.5,4.5 0 1,0 9,0 a 4.5,4.5 0 1,0 -9,0" />
+
+    <!-- Flecha GPS superior -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 78,20 L 85,34 L 78,31 L 71,34 Z" />
+</vector>

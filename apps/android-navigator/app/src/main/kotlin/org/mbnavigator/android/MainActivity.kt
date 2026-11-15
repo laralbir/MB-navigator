@@ -12,6 +12,8 @@ import org.mbnavigator.android.ui.theme.MBNavigatorTheme
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
+    // Transición suave desde el splash windowBackground al tema de la app
+    setTheme(R.style.Theme_MBNavigator)
     super.onCreate(savedInstanceState)
 
     enableEdgeToEdge()

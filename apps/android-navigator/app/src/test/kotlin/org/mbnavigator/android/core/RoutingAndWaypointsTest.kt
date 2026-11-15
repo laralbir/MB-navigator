@@ -7,6 +7,7 @@ import org.junit.Test
 import org.mbnavigator.android.core.model.GeoPoint
 import org.mbnavigator.android.core.model.Waypoint
 import org.mbnavigator.android.core.routing.MockRoutingEngine
+import org.mbnavigator.android.core.routing.MotorcycleRoutingProfile
 
 class RoutingAndWaypointsTest {
 
@@ -22,7 +23,8 @@ class RoutingAndWaypointsTest {
         val result = router.calculateRoute(
             origin = origin,
             destination = dest,
-            viaPoints = listOf(intermediatePoi1, intermediatePoi2)
+            viaPoints = listOf(intermediatePoi1, intermediatePoi2),
+            profile = MotorcycleRoutingProfile.CURVY
         )
 
         assertTrue("Routing should succeed", result.isSuccess)
@@ -34,5 +36,22 @@ class RoutingAndWaypointsTest {
         assertEquals(intermediatePoi1.point, points[1])
         assertEquals(intermediatePoi2.point, points[2])
         assertEquals(dest, points[3])
+        assertTrue("Track name must reflect motorcycle profile", track.name.contains("Moto"))
+    }
+
+    @Test
+    fun test_motorcycle_curvy_profile_adjusts_speed_and_duration() = runBlocking {
+        val router = MockRoutingEngine()
+        val origin = GeoPoint(40.0, -3.0)
+        val dest = GeoPoint(40.5, -3.0) // ~55 km
+
+        val curvyResult = router.calculateRoute(origin, dest, profile = MotorcycleRoutingProfile.CURVY).getOrThrow()
+        val fastResult = router.calculateRoute(origin, dest, profile = MotorcycleRoutingProfile.FAST_HIGHWAY).getOrThrow()
+
+        // En curvas la velocidad media estimada es menor y por tanto la duración estimada es mayor
+        assertTrue(
+            "Curvy duration should be longer than fast highway duration",
+            curvyResult.statistics.durationSeconds > fastResult.statistics.durationSeconds
+        )
     }
 }

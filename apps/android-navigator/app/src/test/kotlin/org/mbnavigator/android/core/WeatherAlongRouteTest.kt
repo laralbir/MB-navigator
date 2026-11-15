@@ -6,6 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mbnavigator.android.core.model.GeoPoint
 import org.mbnavigator.android.core.model.MeteoAlertLevel
+import org.mbnavigator.android.core.model.RouteSegmentWeather
 import org.mbnavigator.android.core.model.Track
 import org.mbnavigator.android.core.model.TrackSegment
 import org.mbnavigator.android.core.model.WeatherCondition
@@ -20,7 +21,7 @@ class WeatherAlongRouteTest {
 
         val departureTime = Instant.parse("2026-11-15T12:00:00Z")
         val track = Track(
-            name = "Ruta de prueba",
+            name = "Ruta en moto",
             segments = listOf(
                 TrackSegment(
                     listOf(
@@ -58,7 +59,7 @@ class WeatherAlongRouteTest {
         )
 
         val track = Track(
-            name = "Ruta de montaña",
+            name = "Puerto de montaña en moto",
             segments = listOf(
                 TrackSegment(listOf(GeoPoint(42.5, 0.5), GeoPoint(42.6, 0.6)))
             )
@@ -69,5 +70,25 @@ class WeatherAlongRouteTest {
 
         assertTrue("Should detect red weather alert", hasRedAlert)
         assertEquals(WeatherCondition.SNOW, weather.first().condition)
+    }
+
+    @Test
+    fun test_motorcycle_specific_crosswind_and_ice_hazard_flags() {
+        val dangerousMountainSegment = RouteSegmentWeather(
+            segmentIndex = 0,
+            coordinate = GeoPoint(42.0, 0.0),
+            estimatedArrivalTime = Instant.now(),
+            temperatureCelsius = 1.5, // 1.5ºC cerca de congelación
+            precipitationProbabilityPercent = 80,
+            precipitationMm = 2.0, // lluvia en frío = riesgo de hielo
+            windSpeedKmh = 38.0,   // Viento fuerte para moto
+            windGustKmh = 55.0,    // Racha violenta lateral
+            condition = WeatherCondition.RAIN_HEAVY,
+            alertLevel = MeteoAlertLevel.ORANGE
+        )
+
+        assertTrue("Must flag crosswind hazard for motorcycle", dangerousMountainSegment.isCrosswindHazardForMotorcycle)
+        assertTrue("Must flag wet road risk", dangerousMountainSegment.isWetRoadRisk)
+        assertTrue("Must flag freezing black ice risk in cold asphalt", dangerousMountainSegment.isFreezingAsphaltRisk)
     }
 }

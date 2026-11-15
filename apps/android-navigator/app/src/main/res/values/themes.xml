@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Tema Base de la Aplicación -->
+    <style name="Theme.MBNavigator" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/asphalt_dark</item>
+        <item name="android:navigationBarColor">@color/asphalt_dark</item>
+        <item name="android:windowBackground">@color/asphalt_dark</item>
+    </style>
 
-    <style name="Theme.MBNavigator" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Tema Splash / Pantalla de Inicio -->
+    <style name="Theme.MBNavigator.Starting" parent="Theme.MBNavigator">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:statusBarColor">@color/splash_background_color</item>
+        <item name="android:navigationBarColor">@color/splash_background_color</item>
+    </style>
 </resources>

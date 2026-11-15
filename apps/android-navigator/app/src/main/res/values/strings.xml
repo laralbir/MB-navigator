@@ -1,3 +1,10 @@
 <resources>
     <string name="app_name">MB Navigator</string>
+    <string name="app_subtitle">Motorbike GPS Navigator</string>
+    <string name="profile_moto_curvy">Moto: Carreteras con Curvas</string>
+    <string name="profile_moto_scenic">Moto: Paisajística y Montaña</string>
+    <string name="profile_moto_fast">Moto: Rápida por Autovía</string>
+    <string name="profile_moto_adventure">Moto: Trail / Pistas Offroad</string>
+    <string name="glove_mode_active">Modo Guantes Activado</string>
+    <string name="rain_lock_active">Protección contra Lluvia Activa</string>
 </resources>

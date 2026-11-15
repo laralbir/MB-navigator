@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 500" width="1024" height="500">
+  <defs>
+    <radialGradient id="splashBg" cx="30%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#131D2E"/>
+      <stop offset="100%" stop-color="#090E17"/>
+    </radialGradient>
+    <linearGradient id="neonGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E676"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="500" fill="url(#splashBg)"/>
+
+  <!-- Líneas de velocidad / brújula de fondo -->
+  <circle cx="280" cy="250" r="190" fill="none" stroke="#1E293B" stroke-width="2"/>
+  <circle cx="280" cy="250" r="130" fill="none" stroke="#1E293B" stroke-width="1.5" stroke-dasharray="6 6"/>
+
+  <!-- Carretera curvada de montaña -->
+  <path d="M 160,360 C 190,320 200,250 270,250 C 340,250 370,180 390,130"
+        fill="none" stroke="#1E293B" stroke-width="44" stroke-linecap="round"/>
+  <path d="M 160,360 C 190,320 200,250 270,250 C 340,250 370,180 390,130"
+        fill="none" stroke="url(#neonGlow)" stroke-width="14" stroke-linecap="round"/>
+
+  <!-- Moto trazando la curva -->
+  <circle cx="205" cy="300" r="26" fill="none" stroke="#FFFFFF" stroke-width="12"/>
+  <circle cx="348" cy="206" r="26" fill="none" stroke="#FFFFFF" stroke-width="12"/>
+  <path d="M 205,300 L 250,268 L 272,222 L 305,222 L 324,204 L 345,204 L 348,206 L 312,248 L 268,276 Z" fill="#FFFFFF"/>
+  <circle cx="272" cy="195" r="20" fill="#00E676"/>
+  <path d="M 279,188 L 292,188 C 297,195 295,202 285,204 L 279,204 Z" fill="#090E17"/>
+  <polygon points="345,199 368,194 362,212" fill="#FF9100"/>
+  <polygon points="390,85 422,145 390,132 358,145" fill="#FF9100"/>
+
+  <!-- Tipografía MB NAVIGATOR -->
+  <text x="470" y="235" font-family="system-ui, -apple-system, sans-serif" font-size="58" font-weight="900" fill="#FFFFFF" letter-spacing="3">MB NAVIGATOR</text>
+  <text x="475" y="275" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="700" fill="#00E676" letter-spacing="6">MOTORBIKE GPS &amp; ROUTE ECOSYSTEM</text>
+  <text x="475" y="315" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="500" fill="#94A3B8" letter-spacing="2">CURVY ROADS • DGT 3.0 • OFFLINE MAPS • AEMET PREDICTIVE WEATHER</text>
+</svg>

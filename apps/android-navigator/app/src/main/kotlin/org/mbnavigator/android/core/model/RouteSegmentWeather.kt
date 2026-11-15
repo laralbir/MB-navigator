@@ -5,8 +5,8 @@ import java.time.Instant
 enum class MeteoAlertLevel {
     NONE,
     YELLOW,  // Aviso informativo
-    ORANGE,  // Riesgo importante (alerta prioritaria)
-    RED      // Riesgo extraordinario (sugerir ruta alternativa)
+    ORANGE,  // Riesgo importante (alerta prioritaria en moto)
+    RED      // Riesgo extraordinario (peligro extremo en moto, sugerir ruta alternativa)
 }
 
 enum class WeatherCondition {
@@ -23,7 +23,8 @@ enum class WeatherCondition {
 }
 
 /**
- * Meteorología calculada para un tramo según la hora estimada de paso.
+ * Meteorología calculada para un tramo según la hora estimada de paso,
+ * con análisis de riesgos específicos para conducción en motocicleta.
  */
 data class RouteSegmentWeather(
     val segmentIndex: Int,
@@ -37,4 +38,26 @@ data class RouteSegmentWeather(
     val condition: WeatherCondition,
     val alertLevel: MeteoAlertLevel = MeteoAlertLevel.NONE,
     val alertDescription: String? = null
-)
+) {
+    /**
+     * Peligro de viento lateral cruzado para motocicletas (ráfagas > 45 km/h o viento constante > 35 km/h).
+     */
+    val isCrosswindHazardForMotorcycle: Boolean
+        get() = windGustKmh >= 45.0 || windSpeedKmh >= 35.0
+
+    /**
+     * Peligro de asfalto mojado / pérdida de adherencia en curva.
+     */
+    val isWetRoadRisk: Boolean
+        get() = precipitationMm > 0.5 || condition in listOf(
+            WeatherCondition.RAIN_LIGHT,
+            WeatherCondition.RAIN_HEAVY,
+            WeatherCondition.THUNDERSTORM
+        )
+
+    /**
+     * Riesgo de placas de hielo negro (*black ice*) en curvas sombrías o puertos de montaña.
+     */
+    val isFreezingAsphaltRisk: Boolean
+        get() = temperatureCelsius <= 3.0 && (isWetRoadRisk || condition == WeatherCondition.ICE_HAZARD)
+}
