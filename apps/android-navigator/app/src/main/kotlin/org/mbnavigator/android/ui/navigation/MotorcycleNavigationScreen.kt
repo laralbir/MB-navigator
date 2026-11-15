@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -879,9 +880,10 @@ fun MotorcycleNavigationScreen(
                         .weight(1f)
                         .height(50.dp)
                         .clickable { showSearchSheet = true },
-                    color = palette.hudOverlay,
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, palette.border)
+                    color = palette.surface,
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, palette.border),
+                    shadowElevation = 8.dp
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp),
@@ -923,9 +925,10 @@ fun MotorcycleNavigationScreen(
                     modifier = Modifier
                         .height(50.dp)
                         .clickable { AppPreferencesManager.cycleMapStyle() },
-                    color = palette.hudOverlay,
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, palette.border)
+                    color = palette.surface,
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, palette.border),
+                    shadowElevation = 8.dp
                 ) {
                     Box(
                         modifier = Modifier.padding(horizontal = 10.dp),
@@ -985,43 +988,72 @@ fun MotorcycleNavigationScreen(
                     }
                 )
             } else {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = palette.hudOverlay),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, palette.border),
-                    modifier = Modifier.fillMaxWidth()
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Modo Mapa Libre",
-                                color = palette.primary,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Busca un destino arriba o abre un track GPX en Rutas.",
-                                color = palette.textSecondary,
-                                fontSize = 12.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = onOpenRoutes,
-                            colors = ButtonDefaults.buttonColors(containerColor = palette.primary),
-                            shape = RoundedCornerShape(10.dp)
+                    item {
+                        Surface(
+                            color = palette.primary,
+                            shape = RoundedCornerShape(50),
+                            shadowElevation = 6.dp,
+                            modifier = Modifier.clickable { onOpenRoutes() }
                         ) {
                             Text(
-                                text = "📂 Rutas",
+                                text = "📂 Mis Rutas",
                                 color = palette.onPrimary,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
+                            )
+                        }
+                    }
+                    items(favoriteDestinations, key = { it.id }) { fav ->
+                        Surface(
+                            color = palette.surface,
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(1.dp, palette.border),
+                            shadowElevation = 5.dp,
+                            modifier = Modifier.clickable {
+                                val origin = effectivePosition ?: GeoPoint(40.4168, -3.7038)
+                                scope.launch {
+                                    isCalculatingRoute = true
+                                    val calculated = OpenRoutingClient.calculateRoadRoute(
+                                        origin = origin,
+                                        destination = GeoPoint(fav.latitude, fav.longitude),
+                                        destinationName = fav.name,
+                                        profile = selectedProfile,
+                                        options = routeOptions
+                                    )
+                                    NavigationSessionRepository.startCalculatedRoute(calculated)
+                                    followGps = true
+                                    isCalculatingRoute = false
+                                }
+                            }
+                        ) {
+                            Text(
+                                text = "${fav.category.icon} ${fav.name}",
+                                color = palette.textPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
+                            )
+                        }
+                    }
+                    item {
+                        Surface(
+                            color = palette.surface,
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(1.dp, palette.border),
+                            shadowElevation = 5.dp,
+                            modifier = Modifier.clickable { showSearchSheet = true }
+                        ) {
+                            Text(
+                                text = "⚙️ Ruta / Favoritos",
+                                color = palette.textPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
                             )
                         }
                     }

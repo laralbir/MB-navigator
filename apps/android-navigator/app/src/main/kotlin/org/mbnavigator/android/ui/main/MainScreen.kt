@@ -183,13 +183,15 @@ fun MainScreen(
                 if (!isTripActiveInMap) {
                     Surface(
                         color = palette.surface,
+                        shadowElevation = 12.dp,
+                        border = BorderStroke(0.5.dp, palette.border),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         NavigationBar(
                             modifier = Modifier.fillMaxWidth(),
                             containerColor = palette.surface,
                             contentColor = palette.textPrimary,
-                            tonalElevation = 8.dp
+                            tonalElevation = 0.dp
                         ) {
                             AppTab.entries.forEach { tab ->
                                 val isSelected = selectedTab == tab

@@ -150,138 +150,157 @@ fun RoutesScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = palette.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
                     border = BorderStroke(1.dp, palette.border),
-                    shape = RoundedCornerShape(20.dp)
+                    shape = RoundedCornerShape(22.dp)
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    Column {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(palette.primary.copy(alpha = 0.08f))
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Top
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Box(
+                                modifier = Modifier
+                                    .background(palette.surface, RoundedCornerShape(50))
+                                    .border(1.dp, palette.border, RoundedCornerShape(50))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "🏍️ ${route.estimatedCurviness}",
+                                    color = palette.primary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .background(palette.primary, RoundedCornerShape(50))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = route.format,
+                                    color = palette.onPrimary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
+
+                        Column(modifier = Modifier.padding(16.dp)) {
                             Text(
                                 text = route.title,
                                 color = palette.textPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                modifier = Modifier.weight(1f)
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 16.sp
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .background(palette.primary.copy(alpha = 0.14f), RoundedCornerShape(6.dp))
-                                    .border(1.dp, palette.primary, RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(route.format, color = palette.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Column {
+                                    Text("Distancia", color = palette.textSecondary, fontSize = 11.sp)
+                                    Text(
+                                        "${String.format(Locale.US, "%.1f", route.distanceKm)} km",
+                                        color = palette.primary,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 16.sp
+                                    )
+                                }
+                                Column {
+                                    Text("Desnivel +", color = palette.textSecondary, fontSize = 11.sp)
+                                    Text(
+                                        "+${route.elevationGainM.toInt()} m",
+                                        color = palette.textPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text("Trazado", color = palette.textSecondary, fontSize = 11.sp)
+                                    Text(
+                                        "${route.points.size} pts · ${route.curveCount} curvas",
+                                        color = palette.secondary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
                             }
-                        }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text("Distancia", color = palette.textSecondary, fontSize = 11.sp)
-                                Text(
-                                    "${String.format(Locale.US, "%.1f", route.distanceKm)} km",
-                                    color = palette.textPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 14.sp
-                                )
-                            }
-                            Column {
-                                Text("Desnivel +", color = palette.textSecondary, fontSize = 11.sp)
-                                Text(
-                                    "+${route.elevationGainM.toInt()} m",
-                                    color = palette.textPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 14.sp
-                                )
-                            }
-                            Column {
-                                Text("Trazado", color = palette.textSecondary, fontSize = 11.sp)
-                                Text(
-                                    "${route.points.size} pts · ${route.curveCount} curvas",
-                                    color = palette.secondary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = {
-                                    NavigationSessionRepository.startNavigatingRoute(route, previewSimulation = false)
-                                    onSelectRouteToNavigate(route)
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = palette.primary),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .weight(1.4f)
-                                    .height(48.dp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(
-                                    text = "▶ Navegar",
-                                    color = palette.onPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                            }
+                                Button(
+                                    onClick = {
+                                        NavigationSessionRepository.startNavigatingRoute(route, previewSimulation = false)
+                                        onSelectRouteToNavigate(route)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.primary),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier
+                                        .weight(1.4f)
+                                        .height(48.dp)
+                                ) {
+                                    Text(
+                                        text = "▶ Navegar",
+                                        color = palette.onPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
 
-                            OutlinedButton(
-                                onClick = {
-                                    NavigationSessionRepository.startNavigatingRoute(route, previewSimulation = true)
-                                    onSelectRouteToNavigate(route)
-                                },
-                                border = BorderStroke(1.dp, palette.secondary),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp)
-                            ) {
-                                Text("👁️ Previo", color = palette.secondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
+                                OutlinedButton(
+                                    onClick = {
+                                        NavigationSessionRepository.startNavigatingRoute(route, previewSimulation = true)
+                                        onSelectRouteToNavigate(route)
+                                    },
+                                    border = BorderStroke(1.dp, palette.secondary),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                ) {
+                                    Text("👁️ Previo", color = palette.secondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
 
-                            OutlinedButton(
-                                onClick = {
-                                    runCatching {
-                                        val gpxFile = NavigationSessionRepository.exportRouteToShareableGpxFile(context, route)
-                                        val shareUri = FileProvider.getUriForFile(
-                                            context,
-                                            "${context.packageName}.fileprovider",
-                                            gpxFile
-                                        )
-                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "application/gpx+xml"
-                                            putExtra(Intent.EXTRA_STREAM, shareUri)
-                                            putExtra(Intent.EXTRA_SUBJECT, "${route.title}.gpx")
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                OutlinedButton(
+                                    onClick = {
+                                        runCatching {
+                                            val gpxFile = NavigationSessionRepository.exportRouteToShareableGpxFile(context, route)
+                                            val shareUri = FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.fileprovider",
+                                                gpxFile
+                                            )
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "application/gpx+xml"
+                                                putExtra(Intent.EXTRA_STREAM, shareUri)
+                                                putExtra(Intent.EXTRA_SUBJECT, "${route.title}.gpx")
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            context.startActivity(
+                                                Intent.createChooser(shareIntent, "Compartir ruta GPX: ${route.title}")
+                                            )
+                                        }.onFailure { err ->
+                                            importFeedback = false to "⚠️ No se pudo compartir GPX: ${err.message}"
                                         }
-                                        context.startActivity(
-                                            Intent.createChooser(shareIntent, "Compartir ruta GPX: ${route.title}")
-                                        )
-                                    }.onFailure { err ->
-                                        importFeedback = false to "⚠️ No se pudo compartir GPX: ${err.message}"
-                                    }
-                                },
-                                border = BorderStroke(1.dp, palette.border),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .height(48.dp)
-                            ) {
-                                Text("📤", fontSize = 16.sp)
+                                    },
+                                    border = BorderStroke(1.dp, palette.border),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier
+                                        .height(48.dp)
+                                ) {
+                                    Text("📤", fontSize = 16.sp)
+                                }
                             }
                         }
                     }
