@@ -1,19 +1,3 @@
-/*
- * Copyright 2026 The Android Open Source Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package org.mbnavigator.android.ui.theme
 
 import android.os.Build
@@ -24,29 +8,72 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import org.mbnavigator.android.core.settings.AppPreferencesManager
+import org.mbnavigator.android.core.settings.AppThemeMode
 
 private val DarkColorScheme = darkColorScheme(
     primary = primaryDark,
+    onPrimary = Color(0xFF00354A),
     primaryContainer = primaryContainerDark,
+    onPrimaryContainer = Color(0xFFCFEAFD),
     secondary = secondaryDark,
-    tertiary = tertiaryDark
+    onSecondary = Color(0xFF193240),
+    secondaryContainer = Color(0xFF314959),
+    onSecondaryContainer = Color(0xFFCFEAFD),
+    tertiary = tertiaryDark,
+    onTertiary = Color(0xFF331445),
+    background = Color(0xFF101416),
+    onBackground = Color(0xFFE0E3E6),
+    surface = Color(0xFF101416),
+    onSurface = Color(0xFFE0E3E6),
+    surfaceVariant = Color(0xFF40484E),
+    onSurfaceVariant = Color(0xFFBFC8CF),
+    outline = Color(0xFF899298),
+    outlineVariant = Color(0xFF40484E),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005)
 )
 
 private val LightColorScheme = lightColorScheme(
     primary = primaryLight,
+    onPrimary = Color(0xFFFFFFFF),
     primaryContainer = primaryContainerLight,
+    onPrimaryContainer = Color(0xFFFFFFFF),
     secondary = secondaryLight,
-    tertiary = tertiaryLight
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFCFEAFD),
+    onSecondaryContainer = Color(0xFF344D5C),
+    tertiary = tertiaryLight,
+    onTertiary = Color(0xFFFFFFFF),
+    background = Color(0xFFF7F9FD),
+    onBackground = Color(0xFF191C1F),
+    surface = Color(0xFFF7F9FD),
+    onSurface = Color(0xFF191C1F),
+    surfaceVariant = Color(0xFFDBE4EB),
+    onSurfaceVariant = Color(0xFF40484E),
+    outline = Color(0xFF70787E),
+    outlineVariant = Color(0xFFBFC8CF),
+    error = Color(0xFFBA1A1A),
+    onError = Color(0xFFFFFFFF)
 )
 
 @Composable
 fun MBNavigatorTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    val mode by AppPreferencesManager.themeMode.collectAsState()
+    val systemDark = isSystemInDarkTheme()
+    val darkTheme = when (mode) {
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK -> true
+        AppThemeMode.AUTO -> systemDark
+    }
+
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
@@ -62,4 +89,3 @@ fun MBNavigatorTheme(
         content = content
     )
 }
-

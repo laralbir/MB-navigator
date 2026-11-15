@@ -18,11 +18,11 @@ enum class AppThemeMode(val label: String, val icon: String) {
 }
 
 enum class MapColorStyle(val label: String, val shortLabel: String, val description: String) {
-    CARTO_VOYAGER("Voyager Color", "🎨 Voyager", "Mapa moderno claro con carreteras y relieve suave"),
+    CARTO_VOYAGER("Voyager Color", "🎨 Voyager", "Mapa claro y suave con carreteras bien diferenciadas"),
     OSM_CLASSIC("OSM Clásico", "🗺️ OSM", "OpenStreetMap detallado estándar a todo color"),
     OPEN_TOPO("Topográfico", "⛰️ Topo", "Curvas de nivel, puertos de montaña y valles"),
-    CARTO_POSITRON("Plata Minimal", "🏔️ Minimal", "Fondo gris claro de alto contraste para destacar la ruta"),
-    CARTO_DARK("Nocturno Zafiro", "🌌 Nocturno", "Mapa oscuro diseñado nativamente para conducción nocturna")
+    CARTO_POSITRON("Plata Minimal", "🏔️ Minimal", "Fondo claro neutro de alto contraste para destacar la ruta"),
+    CARTO_DARK("Nocturno Suave", "🌌 Nocturno", "Mapa nocturno en azul pizarra diseñado para la vista")
 }
 
 enum class RouteTrackColor(
@@ -31,10 +31,10 @@ enum class RouteTrackColor(
     val borderHex: String,
     val composeColor: Color
 ) {
-    COBALT_BLUE("Azul Cobalto", "#2563EB", "#1E3A8A", Color(0xFF2563EB)),
-    TOURING_ORANGE("Naranja Touring", "#F97316", "#9A3412", Color(0xFFF97316)),
-    ROYAL_PURPLE("Violeta Ruta", "#7C3AED", "#4C1D95", Color(0xFF7C3AED)),
-    CRIMSON_CORAL("Rojo Rally", "#E11D48", "#881337", Color(0xFFE11D48))
+    OCEAN_BLUE("Azul Océano", "#23759B", "#00506E", Color(0xFF23759B)),
+    TEAL_MINT("Verde Agua", "#0D9488", "#115E59", Color(0xFF0D9488)),
+    LAVENDER_IRIS("Lavanda M3", "#7E57C2", "#4527A0", Color(0xFF7E57C2)),
+    CORAL_ROSE("Coral Suave", "#E11D48", "#881337", Color(0xFFE11D48))
 }
 
 data class NavigatorPalette(
@@ -68,7 +68,7 @@ object AppPreferencesManager {
     private val _mapStyle = MutableStateFlow(MapColorStyle.CARTO_VOYAGER)
     val mapStyle: StateFlow<MapColorStyle> = _mapStyle.asStateFlow()
 
-    private val _routeColor = MutableStateFlow(RouteTrackColor.COBALT_BLUE)
+    private val _routeColor = MutableStateFlow(RouteTrackColor.OCEAN_BLUE)
     val routeColor: StateFlow<RouteTrackColor> = _routeColor.asStateFlow()
 
     private val _wifiOnlyDownloads = MutableStateFlow(true)
@@ -88,8 +88,8 @@ object AppPreferencesManager {
         }.getOrDefault(MapColorStyle.CARTO_VOYAGER)
 
         _routeColor.value = runCatching {
-            RouteTrackColor.valueOf(sp.getString(KEY_ROUTE_COLOR, RouteTrackColor.COBALT_BLUE.name)!!)
-        }.getOrDefault(RouteTrackColor.COBALT_BLUE)
+            RouteTrackColor.valueOf(sp.getString(KEY_ROUTE_COLOR, RouteTrackColor.OCEAN_BLUE.name)!!)
+        }.getOrDefault(RouteTrackColor.OCEAN_BLUE)
 
         _wifiOnlyDownloads.value = sp.getBoolean(KEY_WIFI_ONLY, true)
     }
@@ -122,6 +122,10 @@ object AppPreferencesManager {
     }
 }
 
+/**
+ * Paleta oficial siguiendo guías tonales de Material Design 3 (m3.material.io):
+ * tonos azul océano/cielo suaves, superficies tonales confortables y cero marrón dominante.
+ */
 @Composable
 fun rememberNavigatorPalette(): NavigatorPalette {
     val mode by AppPreferencesManager.themeMode.collectAsState()
@@ -135,34 +139,34 @@ fun rememberNavigatorPalette(): NavigatorPalette {
     return if (isDark) {
         NavigatorPalette(
             isDark = true,
-            bg = Color(0xFF0F172A),
-            surface = Color(0xFF1E293B),
-            surfaceAlt = Color(0xFF334155),
-            hudOverlay = Color(0xEE1E293B),
-            border = Color(0xFF334155),
-            textPrimary = Color(0xFFF8FAFC),
-            textSecondary = Color(0xFF94A3B8),
-            primary = Color(0xFF38BDF8),
-            onPrimary = Color(0xFF0F172A),
-            secondary = Color(0xFFFB923C),
-            success = Color(0xFF10B981),
-            danger = Color(0xFFF87171)
+            bg = Color(0xFF101416),
+            surface = Color(0xFF1D2023),
+            surfaceAlt = Color(0xFF272A2D),
+            hudOverlay = Color(0xEB191C1F),
+            border = Color(0xFF40484E),
+            textPrimary = Color(0xFFE0E3E6),
+            textSecondary = Color(0xFFBFC8CF),
+            primary = Color(0xFF87CFF9),
+            onPrimary = Color(0xFF00354A),
+            secondary = Color(0xFFB0CADC),
+            success = Color(0xFF6FD9AC),
+            danger = Color(0xFFFFB4AB)
         )
     } else {
         NavigatorPalette(
             isDark = false,
-            bg = Color(0xFFF1F5F9),
+            bg = Color(0xFFF7F9FD),
             surface = Color(0xFFFFFFFF),
-            surfaceAlt = Color(0xFFE2E8F0),
-            hudOverlay = Color(0xF5FFFFFF),
-            border = Color(0xFFCBD5E1),
-            textPrimary = Color(0xFF0F172A),
-            textSecondary = Color(0xFF475569),
-            primary = Color(0xFF2563EB),
+            surfaceAlt = Color(0xFFECEEF1),
+            hudOverlay = Color(0xF5F7F9FD),
+            border = Color(0xFFBFC8CF),
+            textPrimary = Color(0xFF191C1F),
+            textSecondary = Color(0xFF40484E),
+            primary = Color(0xFF00506E),
             onPrimary = Color(0xFFFFFFFF),
-            secondary = Color(0xFFF97316),
-            success = Color(0xFF059669),
-            danger = Color(0xFFDC2626)
+            secondary = Color(0xFF23759B),
+            success = Color(0xFF1B7F5C),
+            danger = Color(0xFFBA1A1A)
         )
     }
 }

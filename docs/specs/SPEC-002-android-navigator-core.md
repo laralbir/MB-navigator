@@ -164,6 +164,14 @@ Para garantizar un rendimiento no bloqueante, alta resiliencia y procesamiento d
 
 ---
 
+### 2.12. Principios UX/UI y Sistema de Diseño Material Design 3 (`m3.material.io`)
+- **RF-UX-M3-01 (Reglas Tonales, Suavidad y Accesibilidad)**:
+  - Todas las pantallas de navegación, rutas, mapas, diagnóstico GNSS y ajustes siguen estrictamente la especificación **Material Design 3** (`https://m3.material.io/`).
+  - Paleta cromática basada en colores amables, suaves y equilibrados (familia principal **Azul Océano / Cielo M3** `#00506E` / `#87CFF9`, secundario azul pizarra suave `#23759B` / `#B0CADC` y acento terciario lavanda `#613A73` / `#E6B5F8`), evitando estéticas monocromas de alto contraste agresivo y prohibiendo el uso de marrón como color principal.
+  - Superficies tonales graduadas (`surface`, `surfaceContainerLow`, `surfaceContainer`, `outlineVariant`), radios consistentes (`10–18 dp`), contraste mínimo WCAG AA en textos sobre fondo claro u oscuro y objetivos táctiles cómodos ($\ge 48\text{ dp}$).
+
+---
+
 ## 3. Contratos de Datos Clave
 
 ```kotlin

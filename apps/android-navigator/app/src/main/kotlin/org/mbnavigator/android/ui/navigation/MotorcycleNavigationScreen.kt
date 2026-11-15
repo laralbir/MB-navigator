@@ -320,7 +320,7 @@ fun MotorcycleNavigationScreen(
 
                 route.waypoints.forEachIndexed { idx, wp ->
                     val wpColor = if (wp.isMandatoryPassThrough) {
-                        android.graphics.Color.parseColor("#F97316")
+                        android.graphics.Color.parseColor("#7E57C2")
                     } else {
                         android.graphics.Color.parseColor("#64748B")
                     }
