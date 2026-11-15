@@ -1,0 +1,46 @@
+name: route_editor
+description: "MB-navigator: Multiplatform Route & Track Editor (Desktop and Web)"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+  flutter: ">=3.19.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # State Management & Architecture (Very Good Core)
+  bloc: ^8.1.4
+  flutter_bloc: ^8.1.6
+  equatable: ^2.0.5
+
+  # GIS & Map Canvas
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
+  # Interactive Charts
+  fl_chart: ^0.70.2
+
+  # Desktop & Web Workspace Layout (Docked Split Panes)
+  multi_split_view: ^3.6.0
+
+  # Fluid Micro-animations
+  flutter_animate: ^4.5.2
+
+  # Clean Iconography
+  lucide_icons: ^0.359.0
+
+  # File formats (GPX / XML)
+  xml: ^6.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  bloc_test: ^9.1.7
+  mocktail: ^1.0.4
+
+flutter:
+  uses-material-design: true
