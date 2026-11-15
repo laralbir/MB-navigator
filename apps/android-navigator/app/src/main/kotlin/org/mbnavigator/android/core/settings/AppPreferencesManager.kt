@@ -18,11 +18,11 @@ enum class AppThemeMode(val label: String, val icon: String) {
 }
 
 enum class MapColorStyle(val label: String, val shortLabel: String, val description: String) {
-    CARTO_VOYAGER("Voyager Color", "🎨 Voyager", "Mapa claro y suave con carreteras bien diferenciadas"),
     OSM_CLASSIC("OSM Clásico", "🗺️ OSM", "OpenStreetMap detallado estándar a todo color"),
-    OPEN_TOPO("Topográfico", "⛰️ Topo", "Curvas de nivel, puertos de montaña y valles"),
-    CARTO_POSITRON("Plata Minimal", "🏔️ Minimal", "Fondo claro neutro de alto contraste para destacar la ruta"),
-    CARTO_DARK("Nocturno Suave", "🌌 Nocturno", "Mapa nocturno en azul pizarra diseñado para la vista")
+    OSM_HOT("Pastel Suave", "🎨 Pastel", "Estilo suave OpenStreetMap con colores amables y claros"),
+    CYCL_OSM("Rutas y Puertos", "🏍️ Rutas", "Destaca carreteras secundarias, puertos y curvas de nivel"),
+    OPEN_TOPO("Topográfico", "⛰️ Topo", "Relieve completo, cotas altimétricas y valles"),
+    OSM_NIGHT("Nocturno Azul", "🌌 Nocturno", "Mapa en tono pizarra azulado suave para conducción nocturna")
 }
 
 enum class RouteTrackColor(
@@ -65,7 +65,7 @@ object AppPreferencesManager {
     private val _themeMode = MutableStateFlow(AppThemeMode.AUTO)
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
-    private val _mapStyle = MutableStateFlow(MapColorStyle.CARTO_VOYAGER)
+    private val _mapStyle = MutableStateFlow(MapColorStyle.OSM_CLASSIC)
     val mapStyle: StateFlow<MapColorStyle> = _mapStyle.asStateFlow()
 
     private val _routeColor = MutableStateFlow(RouteTrackColor.OCEAN_BLUE)
@@ -84,8 +84,8 @@ object AppPreferencesManager {
         }.getOrDefault(AppThemeMode.AUTO)
 
         _mapStyle.value = runCatching {
-            MapColorStyle.valueOf(sp.getString(KEY_MAP_STYLE, MapColorStyle.CARTO_VOYAGER.name)!!)
-        }.getOrDefault(MapColorStyle.CARTO_VOYAGER)
+            MapColorStyle.valueOf(sp.getString(KEY_MAP_STYLE, MapColorStyle.OSM_CLASSIC.name)!!)
+        }.getOrDefault(MapColorStyle.OSM_CLASSIC)
 
         _routeColor.value = runCatching {
             RouteTrackColor.valueOf(sp.getString(KEY_ROUTE_COLOR, RouteTrackColor.OCEAN_BLUE.name)!!)

@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Typeface
@@ -96,35 +98,24 @@ import java.util.Locale
 import kotlin.math.roundToInt
 import org.osmdroid.util.GeoPoint as OsmGeoPoint
 
-private val TileSourceCartoVoyager by lazy {
+private val TileSourceOsmHot by lazy {
     XYTileSource(
-        "CartoVoyager", 0, 19, 256, ".png",
+        "OsmHumanitarian", 0, 19, 256, ".png",
         arrayOf(
-            "https://a.basemaps.cartocdn.com/rastertiles/voyager/",
-            "https://b.basemaps.cartocdn.com/rastertiles/voyager/",
-            "https://c.basemaps.cartocdn.com/rastertiles/voyager/"
+            "https://a.tile.openstreetmap.fr/hot/",
+            "https://b.tile.openstreetmap.fr/hot/",
+            "https://c.tile.openstreetmap.fr/hot/"
         )
     )
 }
 
-private val TileSourceCartoPositron by lazy {
+private val TileSourceCyclOsm by lazy {
     XYTileSource(
-        "CartoPositron", 0, 19, 256, ".png",
+        "CyclOSM", 0, 19, 256, ".png",
         arrayOf(
-            "https://a.basemaps.cartocdn.com/light_all/",
-            "https://b.basemaps.cartocdn.com/light_all/",
-            "https://c.basemaps.cartocdn.com/light_all/"
-        )
-    )
-}
-
-private val TileSourceCartoDark by lazy {
-    XYTileSource(
-        "CartoDarkMatter", 0, 19, 256, ".png",
-        arrayOf(
-            "https://a.basemaps.cartocdn.com/dark_all/",
-            "https://b.basemaps.cartocdn.com/dark_all/",
-            "https://c.basemaps.cartocdn.com/dark_all/"
+            "https://a.tile-cyclosm.openstreetmap.fr/cyclosm/",
+            "https://b.tile-cyclosm.openstreetmap.fr/cyclosm/",
+            "https://c.tile-cyclosm.openstreetmap.fr/cyclosm/"
         )
     )
 }
@@ -400,7 +391,7 @@ fun MotorcycleNavigationScreen(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 MapView(ctx).apply {
-                    setTileSource(TileSourceCartoVoyager)
+                    setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
                     zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
                     controller.setZoom(6.5)
@@ -1026,10 +1017,11 @@ private fun TurnByTurnBannerCard(
 ) {
     val isOffRoute = progress?.isOffRoute == true
     val cardBorder = if (isOffRoute) palette.danger else routeColor.composeColor
+    val offRouteContainer = if (palette.isDark) Color(0xF53B1922) else Color(0xF7FFF1F2)
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (isOffRoute) palette.danger.copy(alpha = 0.18f) else palette.hudOverlay
+            containerColor = if (isOffRoute) offRouteContainer else palette.hudOverlay
         ),
         shape = RoundedCornerShape(18.dp),
         border = BorderStroke(2.dp, cardBorder),
@@ -1061,7 +1053,7 @@ private fun TurnByTurnBannerCard(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = formatDistanceMeters(progress.distanceToManeuverMeters),
-                            color = if (isOffRoute) palette.secondary else routeColor.composeColor,
+                            color = if (isOffRoute) palette.danger else palette.primary,
                             fontSize = 26.sp,
                             fontWeight = FontWeight.Black
                         )
@@ -1103,13 +1095,13 @@ private fun TurnByTurnBannerCard(
                             Spacer(modifier = Modifier.width(8.dp))
                             Button(
                                 onClick = onRecalculate,
-                                colors = ButtonDefaults.buttonColors(containerColor = palette.secondary),
+                                colors = ButtonDefaults.buttonColors(containerColor = palette.primary),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text(
                                     text = "🔄 Recalcular",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
+                                    color = palette.onPrimary,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                             }
@@ -1177,16 +1169,29 @@ private fun GloveRoundButton(
 }
 
 private fun applyMapVisualStyle(map: MapView, style: MapColorStyle) {
-    map.overlayManager.tilesOverlay.setColorFilter(null)
     val desiredSource = when (style) {
-        MapColorStyle.CARTO_VOYAGER -> TileSourceCartoVoyager
-        MapColorStyle.OSM_CLASSIC -> TileSourceFactory.MAPNIK
+        MapColorStyle.OSM_CLASSIC, MapColorStyle.OSM_NIGHT -> TileSourceFactory.MAPNIK
+        MapColorStyle.OSM_HOT -> TileSourceOsmHot
+        MapColorStyle.CYCL_OSM -> TileSourceCyclOsm
         MapColorStyle.OPEN_TOPO -> TileSourceFactory.OpenTopo
-        MapColorStyle.CARTO_POSITRON -> TileSourceCartoPositron
-        MapColorStyle.CARTO_DARK -> TileSourceCartoDark
     }
     if (map.tileProvider.tileSource != desiredSource) {
         map.setTileSource(desiredSource)
+    }
+
+    if (style == MapColorStyle.OSM_NIGHT) {
+        // Matriz M3 pizarra azulada suave (invertido controlado sin monocromo verde 80s ni marrones)
+        val nightMatrix = ColorMatrix(
+            floatArrayOf(
+                -0.84f, 0f, 0f, 0f, 224f,
+                0f, -0.82f, 0f, 0f, 232f,
+                0f, 0f, -0.74f, 0f, 245f,
+                0f, 0f, 0f, 1f, 0f
+            )
+        )
+        map.overlayManager.tilesOverlay.setColorFilter(ColorMatrixColorFilter(nightMatrix))
+    } else {
+        map.overlayManager.tilesOverlay.setColorFilter(null)
     }
 }
 

@@ -58,9 +58,7 @@ fun MainScreen(
         containerColor = palette.bg,
         bottomBar = {
             NavigationBar(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding(),
+                modifier = Modifier.fillMaxWidth(),
                 containerColor = palette.surface,
                 contentColor = palette.textPrimary,
                 tonalElevation = 8.dp
