@@ -149,6 +149,21 @@ Para garantizar un rendimiento no bloqueante, alta resiliencia y procesamiento d
 
 ---
 
+### 2.11. Diagnóstico GNSS, Compatibilidad GPX y Guía de Usuario Visual
+- **RF-GNSS-01 (Monitorización de Satélites y Señal)**:
+  - Pantalla dedicada de diagnóstico GNSS con radar skyplot de 360° (acimut y elevación), conteo de satélites visibles y usados en el Fix 3D, desglose por constelación (GPS, Galileo, GLONASS, BeiDou) e intensidad de señal CN0 ($\text{dB-Hz}$).
+- **RF-GPX-COMPAT-01 (Importación GPX 1.1 / 1.2 Extendido, KML y GeoJSON)**:
+  - Soporte completo para archivos GPX estándar (1.1) y variantes extendidas con puntos intermedios (`<trp:ViaPoint/>`, `<trp:ShapingPoint/>`) y rutas encadenadas con extensiones `<gpxx:rpt>` sin generar líneas rectas erróneas entre segmentos.
+- **RF-DOC-01 (Guía de Usuario con Capturas de Pantalla)**:
+  - La guía de usuario oficial (`docs/user-guides/android-navigator/README.md`) **DEBE** incluir capturas de pantalla reales y actualizadas de la aplicación en funcionamiento (navegación Turn-by-Turn en mapa, gestión de rutas, mapas offline, radar de satélites GNSS y ajustes) almacenadas en `docs/user-guides/android-navigator/images/` y actualizadas siempre que cambie la interfaz.
+- **RF-MAPS-HIERARCHY-01 (Mapas Offline Jerárquicos desde Ajustes)**:
+  - La gestión de descarga de mapas offline es accesible exclusivamente desde la sección de Mapas dentro de Ajustes.
+  - Navegación jerárquica de mayor a menor detalle (`Continente -> País -> Región`) con descarga masiva por país o continente completo, control de versiones instaladas con detección de actualizaciones y bloqueo opcional mediante preferencia **Solo Wi-Fi** frente a datos móviles.
+- **RF-THEME-01 (Tema Claro/Oscuro y Estilos de Mapa a Color)**:
+  - Configuración persistente de apariencia de interfaz (`Claro`, `Oscuro`, `Automático`) junto con selección múltiple de paletas cartográficas a color (Voyager, OSM Clásico, Topográfico, Minimal y Nocturno) y color del trazado de ruta.
+
+---
+
 ## 3. Contratos de Datos Clave
 
 ```kotlin

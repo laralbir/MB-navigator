@@ -1,8 +1,7 @@
 package org.mbnavigator.android.ui.maps
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -24,8 +22,12 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -35,122 +37,284 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.mbnavigator.android.core.maps.ActiveNetworkType
 import org.mbnavigator.android.core.maps.MapPackageState
 import org.mbnavigator.android.core.maps.OfflineMapManager
 import org.mbnavigator.android.core.maps.WorldwideMapRegion
-
-private val ColorAsphaltBg = Color(0xFF090E17)
-private val ColorSlateSurface = Color(0xFF131D2E)
-private val ColorNeonGreen = Color(0xFF00E676)
-private val ColorNeonAmber = Color(0xFFFF9100)
-private val ColorCardBorder = Color(0xFF1E293B)
+import org.mbnavigator.android.core.settings.AppPreferencesManager
+import org.mbnavigator.android.core.settings.rememberNavigatorPalette
 
 @Composable
 fun OfflineMapsScreen(
+    onBackToSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
     offlineMapManager: OfflineMapManager = rememberOfflineMapManager()
 ) {
-    val context = LocalContext.current
-    val continents = listOf("Todos", "Europa", "América del Norte", "América del Sur", "Asia", "África", "Oceanía")
-    var selectedContinent by remember { mutableStateOf("Todos") }
-    var searchQuery by remember { mutableStateOf("") }
-
+    val palette = rememberNavigatorPalette()
     val catalog = remember { offlineMapManager.getAvailableCatalog() }
     val packageStates by offlineMapManager.packageStates.collectAsState()
     val storageStats by offlineMapManager.storageStats.collectAsState()
+    val networkWarning by offlineMapManager.networkWarning.collectAsState()
+    val updateMessage by offlineMapManager.lastUpdateCheckMessage.collectAsState()
+    val wifiOnly by AppPreferencesManager.wifiOnlyDownloads.collectAsState()
 
-    val filteredMaps = remember(selectedContinent, searchQuery, catalog) {
-        catalog.filter { map ->
-            val matchesContinent = selectedContinent == "Todos" || map.continent == selectedContinent || map.continent == "Global"
-            val matchesSearch = searchQuery.isBlank() ||
-                    map.regionName.contains(searchQuery, ignoreCase = true) ||
-                    map.country.contains(searchQuery, ignoreCase = true) ||
-                    map.description.contains(searchQuery, ignoreCase = true)
-            matchesContinent && matchesSearch
+    var selectedContinent by remember { mutableStateOf<String?>(null) }
+    var selectedCountry by remember { mutableStateOf<String?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val activeNetType = offlineMapManager.getActiveNetworkType()
+    val outdatedPackages = catalog.filter { reg ->
+        val st = packageStates[reg.id] as? MapPackageState.Downloaded
+        st != null && st.installedVersion != reg.latestVersion
+    }
+
+    val continentOrder = listOf("Europa", "América del Norte", "América del Sur", "Asia", "Oceanía", "África", "Global")
+    val continentsList = remember(catalog) {
+        continentOrder.filter { cont -> catalog.any { it.continent == cont } }
+    }
+
+    val countriesInContinent = remember(selectedContinent, catalog) {
+        if (selectedContinent == null) emptyList()
+        else catalog.filter { it.continent == selectedContinent }.map { it.country }.distinct()
+    }
+
+    val regionsInSelection = remember(selectedContinent, selectedCountry, searchQuery, catalog) {
+        when {
+            searchQuery.isNotBlank() -> catalog.filter {
+                it.regionName.contains(searchQuery, ignoreCase = true) ||
+                    it.country.contains(searchQuery, ignoreCase = true) ||
+                    it.continent.contains(searchQuery, ignoreCase = true) ||
+                    it.description.contains(searchQuery, ignoreCase = true)
+            }
+            selectedCountry != null -> catalog.filter {
+                it.continent == selectedContinent && it.country == selectedCountry
+            }
+            else -> emptyList()
         }
     }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(ColorAsphaltBg)
-            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .background(palette.bg)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
-        // Cabecera
-        Text(
-            text = "MAPAS OFFLINE MUNDIALES",
-            color = Color.White,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 1.sp
-        )
-        Text(
-            text = "Descarga mapas vectoriales de cualquier país o región del mundo sin licencias comerciales",
-            color = Color.Gray,
-            fontSize = 12.sp
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Tarjeta de almacenamiento en disco
-        Card(
+        // Barra superior con botón volver a Ajustes
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1826)),
-            border = androidx.compose.foundation.BorderStroke(1.dp, ColorCardBorder),
-            shape = RoundedCornerShape(10.dp)
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
+            Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .height(44.dp)
+                    .clickable {
+                        when {
+                            selectedCountry != null -> selectedCountry = null
+                            selectedContinent != null -> selectedContinent = null
+                            else -> onBackToSettings()
+                        }
+                    },
+                color = palette.surface,
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, palette.border)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("💾", fontSize = 16.sp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            text = "Memoria Usada: ${storageStats.occupiedText}",
-                            color = ColorNeonGreen,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
-                        Text(
-                            text = "Espacio libre en dispositivo: ${storageStats.freeText}",
-                            color = Color.LightGray,
-                            fontSize = 11.sp
-                        )
-                    }
+                Box(
+                    modifier = Modifier.padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (selectedContinent == null && selectedCountry == null) "← Ajustes" else "← Atrás",
+                        color = palette.primary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
                 }
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "${packageStates.values.count { it is MapPackageState.Downloaded }} instalados",
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 11.sp
+                    text = "Mapas Offline y Regiones",
+                    color = palette.textPrimary,
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                val breadcrumb = buildList {
+                    add("Mundo")
+                    selectedContinent?.let { add(it) }
+                    selectedCountry?.let { add(it) }
+                }.joinToString(" › ")
+                Text(
+                    text = breadcrumb,
+                    color = palette.primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Buscador de países o zonas
+        // Panel de Red, Control Wi-Fi y Versiones / Almacenamiento
+        Card(
+            colors = CardDefaults.cardColors(containerColor = palette.surface),
+            border = BorderStroke(1.dp, palette.border),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Almacenamiento: ${storageStats.occupiedText} usados",
+                            color = palette.textPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Libres: ${storageStats.freeText} · Red: ${
+                                when (activeNetType) {
+                                    ActiveNetworkType.WIFI -> "📶 Wi-Fi"
+                                    ActiveNetworkType.CELLULAR -> "📱 Datos móviles"
+                                    ActiveNetworkType.OFFLINE -> "⚠️ Sin conexión"
+                                    ActiveNetworkType.UNKNOWN -> "🌐 Conectado"
+                                }
+                            }",
+                            color = palette.textSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Solo Wi-Fi",
+                            color = palette.textPrimary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Switch(
+                            checked = wifiOnly,
+                            onCheckedChange = { AppPreferencesManager.setWifiOnlyDownloads(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = palette.onPrimary,
+                                checkedTrackColor = palette.primary
+                            )
+                        )
+                    }
+                }
+
+                // Control de versiones de mapas
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = { offlineMapManager.checkForUpdates() },
+                        border = BorderStroke(1.dp, palette.border),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.height(38.dp)
+                    ) {
+                        Text(
+                            text = "🔄 Buscar actualizaciones",
+                            color = palette.textPrimary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    if (outdatedPackages.isNotEmpty()) {
+                        Button(
+                            onClick = { offlineMapManager.updateAllOutdated() },
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.secondary),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                        ) {
+                            Text(
+                                text = "⬆ Actualizar (${outdatedPackages.size})",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                updateMessage?.let { msg ->
+                    Text(
+                        text = msg,
+                        color = palette.primary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+
+        // Aviso si se bloqueó descarga por regla Solo Wi-Fi en datos móviles
+        networkWarning?.let { warn ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = palette.secondary.copy(alpha = 0.14f)),
+                border = BorderStroke(1.dp, palette.secondary),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(warn, color = palette.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                AppPreferencesManager.setWifiOnlyDownloads(false)
+                                offlineMapManager.dismissNetworkWarning()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.secondary),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Permitir datos móviles", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { offlineMapManager.dismissNetworkWarning() },
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Cerrar", color = palette.textPrimary, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Buscador rápido transversal
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Buscar país, región o puerto de montaña...", color = Color.Gray, fontSize = 13.sp) },
+            placeholder = { Text("Buscar país o región (ej: Valencia, Alpes, España)...", fontSize = 13.sp) },
             singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedBorderColor = ColorNeonGreen,
-                unfocusedBorderColor = ColorCardBorder
+                focusedContainerColor = palette.surface,
+                unfocusedContainerColor = palette.surface,
+                focusedTextColor = palette.textPrimary,
+                unfocusedTextColor = palette.textPrimary,
+                focusedBorderColor = palette.primary,
+                unfocusedBorderColor = palette.border
             ),
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth()
@@ -158,196 +322,162 @@ fun OfflineMapsScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Selector de Continente horizontal
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            items(continents) { continent ->
-                val isSelected = selectedContinent == continent
-                Box(
-                    modifier = Modifier
-                        .background(
-                            if (isSelected) ColorNeonGreen else ColorSlateSurface,
-                            RoundedCornerShape(8.dp)
-                        )
-                        .border(
-                            1.dp,
-                            if (isSelected) ColorNeonGreen else ColorCardBorder,
-                            RoundedCornerShape(8.dp)
-                        )
-                        .clickable { selectedContinent = continent }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = continent,
-                        color = if (isSelected) Color.Black else Color.White,
-                        fontWeight = if (isSelected) FontWeight.Black else FontWeight.Normal,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Text(
-            text = "PAQUETES DISPONIBLES (${filteredMaps.size})",
-            color = Color.LightGray,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-
+        // Contenido jerárquico: Continentes -> Países -> Regiones
         LazyColumn(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(filteredMaps, key = { it.id }) { pkg ->
-                val state = packageStates[pkg.id] ?: MapPackageState.NotDownloaded
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = ColorSlateSurface),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, ColorCardBorder),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = pkg.country.uppercase(),
-                                        color = ColorNeonAmber,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Black
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("• ${pkg.continent}", color = Color.Gray, fontSize = 10.sp)
-                                }
+            when {
+                searchQuery.isNotBlank() || selectedCountry != null -> {
+                    if (selectedCountry != null && searchQuery.isBlank()) {
+                        val countryRegions = regionsInSelection
+                        val totalCountryMb = countryRegions.sumOf { it.sizeMb }
+                        item(key = "download_country_banner") {
+                            Button(
+                                onClick = { offlineMapManager.downloadCountry(selectedCountry!!) },
+                                colors = ButtonDefaults.buttonColors(containerColor = palette.primary),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                            ) {
                                 Text(
-                                    text = pkg.regionName,
-                                    color = Color.White,
+                                    text = "⬇ Descargar ${selectedCountry} completo (${countryRegions.size} regiones · $totalCountryMb MB)",
+                                    color = palette.onPrimary,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = pkg.description,
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp,
-                                    maxLines = 2
+                                    fontSize = 13.sp
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                    }
+
+                    items(regionsInSelection, key = { it.id }) { region ->
+                        RegionPackageCard(
+                            region = region,
+                            state = packageStates[region.id] ?: MapPackageState.NotDownloaded,
+                            offlineMapManager = offlineMapManager
+                        )
+                    }
+                }
+
+                selectedContinent != null -> {
+                    val continentRegions = catalog.filter { it.continent == selectedContinent }
+                    val totalContMb = continentRegions.sumOf { it.sizeMb }
+                    item(key = "download_continent_banner") {
+                        Button(
+                            onClick = { offlineMapManager.downloadContinent(selectedContinent!!) },
+                            colors = ButtonDefaults.buttonColors(containerColor = palette.primary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
                             Text(
-                                text = "${pkg.sizeMb} MB",
-                                color = ColorNeonGreen,
+                                text = "⬇ Descargar todo $selectedContinent (${continentRegions.size} paquetes · $totalContMb MB)",
+                                color = palette.onPrimary,
                                 fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp
+                                fontSize = 13.sp
                             )
                         }
+                    }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                    items(countriesInContinent, key = { it }) { country ->
+                        val regs = catalog.filter { it.continent == selectedContinent && it.country == country }
+                        val downloadedCount = regs.count { packageStates[it.id] is MapPackageState.Downloaded }
+                        val totalMb = regs.sumOf { it.sizeMb }
 
-                        when (state) {
-                            is MapPackageState.Downloaded -> {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("✓", color = ColorNeonGreen, fontWeight = FontWeight.Black, fontSize = 14.sp)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Instalado en memoria local", color = ColorNeonGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                    Button(
-                                        onClick = { offlineMapManager.deletePackage(pkg.id) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B1818), contentColor = Color(0xFFFF5252)),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.height(34.dp)
-                                    ) {
-                                        Text("🗑️ Borrar", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-
-                            is MapPackageState.Downloading -> {
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "Descargando: ${state.speedText}",
-                                            color = ColorNeonGreen,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Button(
-                                            onClick = { offlineMapManager.cancelDownload(pkg.id) },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF263238), contentColor = Color.LightGray),
-                                            shape = RoundedCornerShape(6.dp),
-                                            modifier = Modifier.height(28.dp)
-                                        ) {
-                                            Text("Cancelar", fontSize = 10.sp)
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    LinearProgressIndicator(
-                                        progress = { state.progress },
-                                        color = ColorNeonGreen,
-                                        trackColor = Color(0xFF1E293B),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(6.dp)
-                                    )
-                                }
-                            }
-
-                            is MapPackageState.Error -> {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("⚠️ ${state.message}", color = Color.Red, fontSize = 11.sp)
-                                    Button(
-                                        onClick = { offlineMapManager.startDownload(pkg.id) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, ColorNeonAmber),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.height(32.dp)
-                                    ) {
-                                        Text("Reintentar", color = ColorNeonAmber, fontSize = 11.sp)
-                                    }
-                                }
-                            }
-
-                            is MapPackageState.NotDownloaded -> {
-                                Button(
-                                    onClick = { offlineMapManager.startDownload(pkg.id) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, ColorNeonGreen),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(42.dp)
-                                ) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = palette.surface),
+                            border = BorderStroke(1.dp, palette.border),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedCountry = country }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "⬇ DESCARGAR MAPA OFFLINE (${pkg.sizeMb} MB)",
-                                        color = ColorNeonGreen,
-                                        fontWeight = FontWeight.Bold,
+                                        text = country,
+                                        color = palette.textPrimary,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "${regs.size} región(es) · $totalMb MB · $downloadedCount instaladas",
+                                        color = palette.textSecondary,
                                         fontSize = 12.sp
                                     )
                                 }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedButton(
+                                        onClick = { offlineMapManager.downloadCountry(country) },
+                                        border = BorderStroke(1.dp, palette.primary),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("⬇ Todo", color = palette.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Text("›", color = palette.textSecondary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                else -> {
+                    // Nivel 1: Continentes
+                    items(continentsList, key = { it }) { continent ->
+                        val regs = catalog.filter { it.continent == continent }
+                        val countriesCount = regs.map { it.country }.distinct().size
+                        val downloadedCount = regs.count { packageStates[it.id] is MapPackageState.Downloaded }
+                        val icon = when (continent) {
+                            "Europa" -> "🇪🇺"
+                            "América del Norte" -> "🌎"
+                            "América del Sur" -> "🌎"
+                            "Asia" -> "🌏"
+                            "Oceanía" -> "🏝️"
+                            "África" -> "🌍"
+                            else -> "🌐"
+                        }
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = palette.surface),
+                            border = BorderStroke(1.dp, palette.border),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedContinent = continent }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Text(text = icon, fontSize = 26.sp)
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            text = continent,
+                                            color = palette.textPrimary,
+                                            fontSize = 17.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                        Text(
+                                            text = "$countriesCount países · ${regs.size} regiones · $downloadedCount descargadas",
+                                            color = palette.textSecondary,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+                                Text("›", color = palette.primary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -358,7 +488,166 @@ fun OfflineMapsScreen(
 }
 
 @Composable
-private fun rememberOfflineMapManager(): OfflineMapManager {
+private fun RegionPackageCard(
+    region: WorldwideMapRegion,
+    state: MapPackageState,
+    offlineMapManager: OfflineMapManager
+) {
+    val palette = rememberNavigatorPalette()
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = palette.surface),
+        border = BorderStroke(1.dp, palette.border),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = region.regionName,
+                        color = palette.textPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${region.country} · ${region.description}",
+                        color = palette.textSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+
+                // Chip de versión
+                val versionLabel = when (state) {
+                    is MapPackageState.Downloaded -> {
+                        if (state.installedVersion != region.latestVersion) {
+                            "v${state.installedVersion} → v${region.latestVersion}"
+                        } else {
+                            "v${state.installedVersion}"
+                        }
+                    }
+                    else -> "v${region.latestVersion}"
+                }
+                val isOutdated = state is MapPackageState.Downloaded && state.installedVersion != region.latestVersion
+                Surface(
+                    color = if (isOutdated) palette.secondary.copy(alpha = 0.16f) else palette.surfaceAlt,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = versionLabel,
+                        color = if (isOutdated) palette.secondary else palette.textSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            when (state) {
+                is MapPackageState.Downloading -> {
+                    LinearProgressIndicator(
+                        progress = { state.progress },
+                        color = palette.primary,
+                        trackColor = palette.surfaceAlt,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(state.speedText, color = palette.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        OutlinedButton(
+                            onClick = { offlineMapManager.cancelDownload(region.id) },
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Cancelar", color = palette.danger, fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                is MapPackageState.Downloaded -> {
+                    val hasUpdate = state.installedVersion != region.latestVersion
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (hasUpdate) "⬆ Actualización lista" else "✅ Instalado (${region.sizeMb} MB)",
+                            color = if (hasUpdate) palette.secondary else palette.success,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (hasUpdate) {
+                            Button(
+                                onClick = { offlineMapManager.startDownload(region.id) },
+                                colors = ButtonDefaults.buttonColors(containerColor = palette.secondary),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Actualizar", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        if (region.id != "world-base") {
+                            OutlinedButton(
+                                onClick = { offlineMapManager.deletePackage(region.id) },
+                                border = BorderStroke(1.dp, palette.danger),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Borrar", color = palette.danger, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
+                is MapPackageState.Error -> {
+                    Text(state.message, color = palette.danger, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Button(
+                        onClick = { offlineMapManager.startDownload(region.id) },
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.primary),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Reintentar (${region.sizeMb} MB)", color = palette.onPrimary, fontSize = 12.sp)
+                    }
+                }
+
+                MapPackageState.NotDownloaded -> {
+                    Button(
+                        onClick = { offlineMapManager.startDownload(region.id) },
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.surfaceAlt),
+                        border = BorderStroke(1.dp, palette.primary),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp)
+                    ) {
+                        Text(
+                            text = "⬇ Descargar región (${region.sizeMb} MB)",
+                            color = palette.primary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun rememberOfflineMapManager(): OfflineMapManager {
     val context = LocalContext.current
     return remember(context) {
         OfflineMapManager(context.applicationContext)

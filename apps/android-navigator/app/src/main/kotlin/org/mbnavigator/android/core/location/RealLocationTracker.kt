@@ -3,10 +3,13 @@ package org.mbnavigator.android.core.location
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.GnssStatus
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,8 +17,36 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.mbnavigator.android.core.model.GeoPoint
 import java.time.Instant
 
+enum class GnssConstellation(val label: String, val flag: String) {
+    GPS("GPS (EE.UU.)", "🇺🇸"),
+    GLONASS("GLONASS (RU)", "🇷🇺"),
+    GALILEO("Galileo (UE)", "🇪🇺"),
+    BEIDOU("BeiDou (CN)", "🇨🇳"),
+    QZSS("QZSS (JP)", "🇯🇵"),
+    SBAS("SBAS (Corrección)", "🛰️"),
+    UNKNOWN("Otro GNSS", "📡")
+}
+
+data class SatelliteInfo(
+    val svid: Int,
+    val constellation: GnssConstellation,
+    val cn0DbHz: Float,
+    val elevationDegrees: Float,
+    val azimuthDegrees: Float,
+    val usedInFix: Boolean,
+    val hasEphemeris: Boolean
+)
+
+data class GnssStatusSummary(
+    val satellites: List<SatelliteInfo> = emptyList(),
+    val totalVisible: Int = 0,
+    val usedInFixCount: Int = 0,
+    val averageCn0DbHz: Float = 0f,
+    val gpsProviderEnabled: Boolean = false
+)
+
 /**
- * Proveedor de telemetría GPS real en hardware Android utilizando el chip GPS del dispositivo.
+ * Proveedor de telemetría GPS y diagnóstico de satélites GNSS en hardware Android.
  */
 class RealLocationTracker(
     private val context: Context
@@ -31,6 +62,59 @@ class RealLocationTracker(
 
     private val _hasGpsFix = MutableStateFlow(false)
     val hasGpsFix: StateFlow<Boolean> = _hasGpsFix.asStateFlow()
+
+    private val _gnssSummary = MutableStateFlow(
+        GnssStatusSummary(
+            gpsProviderEnabled = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true
+        )
+    )
+    val gnssSummary: StateFlow<GnssStatusSummary> = _gnssSummary.asStateFlow()
+
+    private val gnssCallback = object : GnssStatus.Callback() {
+        override fun onSatelliteStatusChanged(status: GnssStatus) {
+            val count = status.satelliteCount
+            val list = ArrayList<SatelliteInfo>(count)
+            var usedCount = 0
+            var snrSum = 0f
+
+            for (i in 0 until count) {
+                val constType = when (status.getConstellationType(i)) {
+                    GnssStatus.CONSTELLATION_GPS -> GnssConstellation.GPS
+                    GnssStatus.CONSTELLATION_GLONASS -> GnssConstellation.GLONASS
+                    GnssStatus.CONSTELLATION_GALILEO -> GnssConstellation.GALILEO
+                    GnssStatus.CONSTELLATION_BEIDOU -> GnssConstellation.BEIDOU
+                    GnssStatus.CONSTELLATION_QZSS -> GnssConstellation.QZSS
+                    GnssStatus.CONSTELLATION_SBAS -> GnssConstellation.SBAS
+                    else -> GnssConstellation.UNKNOWN
+                }
+                val used = status.usedInFix(i)
+                if (used) usedCount++
+                val cn0 = status.getCn0DbHz(i)
+                snrSum += cn0
+
+                list.add(
+                    SatelliteInfo(
+                        svid = status.getSvid(i),
+                        constellation = constType,
+                        cn0DbHz = cn0,
+                        elevationDegrees = status.getElevationDegrees(i),
+                        azimuthDegrees = status.getAzimuthDegrees(i),
+                        usedInFix = used,
+                        hasEphemeris = status.hasEphemerisData(i)
+                    )
+                )
+            }
+
+            list.sortWith(compareByDescending<SatelliteInfo> { it.usedInFix }.thenByDescending { it.cn0DbHz })
+            _gnssSummary.value = GnssStatusSummary(
+                satellites = list,
+                totalVisible = count,
+                usedInFixCount = usedCount,
+                averageCn0DbHz = if (count > 0) snrSum / count else 0f,
+                gpsProviderEnabled = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true
+            )
+        }
+    }
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
@@ -86,7 +170,7 @@ class RealLocationTracker(
             )
         }
 
-        // 2. Solicitar actualizaciones continuas (cada 1 segundo o 1 metro)
+        // 2. Solicitar actualizaciones continuas (cada 1 segundo o 1 metro) y estado GNSS
         try {
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 locationManager.requestLocationUpdates(
@@ -104,12 +188,27 @@ class RealLocationTracker(
                     locationListener
                 )
             }
+            locationManager.registerGnssStatusCallback(gnssCallback, Handler(Looper.getMainLooper()))
         } catch (_: SecurityException) {}
     }
 
     override fun stopTracking() {
         _isTrackingActive.value = false
         _hasGpsFix.value = false
+        try {
+            locationManager?.unregisterGnssStatusCallback(gnssCallback)
+        } catch (_: Exception) {}
         locationManager?.removeUpdates(locationListener)
+    }
+
+    companion object {
+        @Volatile
+        private var instance: RealLocationTracker? = null
+
+        fun getInstance(context: Context): RealLocationTracker {
+            return instance ?: synchronized(this) {
+                instance ?: RealLocationTracker(context.applicationContext).also { instance = it }
+            }
+        }
     }
 }

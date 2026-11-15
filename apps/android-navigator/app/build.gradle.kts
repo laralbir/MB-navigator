@@ -98,4 +98,7 @@ dependencies {
   implementation(libs.androidx.navigation3.ui)
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+
+  // Maps (OpenStreetMap / Offline SQLite Tiles)
+  implementation(libs.osmdroid.android)
 }

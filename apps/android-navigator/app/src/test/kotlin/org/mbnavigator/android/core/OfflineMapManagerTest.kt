@@ -69,4 +69,30 @@ class OfflineMapManagerTest {
         assertEquals("El estado tras borrar debe ser null o NotDownloaded", null, stateAfterDelete)
         assertTrue("El archivo físico debe ser eliminado tras borrar", !mapFile.exists())
     }
+
+    @Test
+    fun test_offline_map_manager_supports_country_bulk_download_and_version_updates() = testScope.runTest {
+        val manager = OfflineMapManager(baseDir = tempDir, scope = testScope, ioDispatcher = testDispatcher)
+
+        val baseState = manager.packageStates.value["world-base"] as MapPackageState.Downloaded
+        assertEquals("2026.11", baseState.installedVersion)
+
+        manager.checkForUpdates()
+        assertTrue(
+            "Debe detectar el mapa base desactualizado",
+            manager.lastUpdateCheckMessage.value?.contains("1 paquete") == true
+        )
+
+        manager.updateAllOutdated(allowCellularOverride = true)
+        advanceUntilIdle()
+
+        val upgraded = manager.packageStates.value["world-base"] as MapPackageState.Downloaded
+        assertEquals("2026.12", upgraded.installedVersion)
+
+        manager.downloadCountry("España", allowCellularOverride = true)
+        advanceUntilIdle()
+
+        assertTrue("Madrid debe quedar descargado", manager.packageStates.value["es-mad"] is MapPackageState.Downloaded)
+        assertTrue("Comunidad Valenciana (Morella) debe quedar descargado", manager.packageStates.value["es-val"] is MapPackageState.Downloaded)
+    }
 }
