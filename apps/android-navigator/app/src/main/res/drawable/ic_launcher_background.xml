@@ -4,28 +4,20 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Fondo Asfalto Profundo -->
+    <!-- Fondo Asfalto Carbono Premium -->
     <path
-        android:fillColor="#090E17"
+        android:fillColor="#0D121D"
         android:pathData="M0,0h108v108h-108z" />
 
-    <!-- Acento dinámico de velocidad en asfalto oscuro -->
+    <!-- Círculo central sutil de instrumentación / brújula -->
     <path
-        android:fillColor="#131D2E"
-        android:pathData="M0,75 L108,15 L108,108 L0,108 Z" />
+        android:fillColor="#151D2E"
+        android:pathData="M 54, 54 m -40, 0 a 40,40 0 1,0 80,0 a 40,40 0 1,0 -80,0" />
 
-    <!-- Círculo de brújula / radar sutil -->
+    <!-- Anillo exterior de precisión con acento sutil -->
     <path
         android:fillColor="#00000000"
         android:strokeColor="#1E293B"
-        android:strokeWidth="1.2"
-        android:pathData="M 54, 54 m -42, 0 a 42,42 0 1,0 84,0 a 42,42 0 1,0 -84,0" />
-
-    <!-- Anillo exterior con muescas cardinales sutiles -->
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#10B981"
-        android:strokeAlpha="0.4"
         android:strokeWidth="1.5"
-        android:pathData="M 54,14 L 54,19 M 54,89 L 54,94 M 14,54 L 19,54 M 89,54 L 94,54" />
+        android:pathData="M 54, 54 m -40, 0 a 40,40 0 1,0 80,0 a 40,40 0 1,0 -80,0" />
 </vector>

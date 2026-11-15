@@ -1,8 +1,9 @@
 package org.mbnavigator.android.ui.navigation
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,26 +16,24 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -44,19 +43,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import org.mbnavigator.android.core.location.RealLocationTracker
 import org.mbnavigator.android.core.model.GeoPoint
 import org.mbnavigator.android.core.routing.MotorcycleRoutingProfile
 import kotlin.math.roundToInt
@@ -85,47 +85,97 @@ data class RouteCheckpoint(
 fun MotorcycleNavigationScreen(
     modifier: Modifier = Modifier
 ) {
-    // 1. Ruta de prueba: Madrid -> Puerto de Navacerrada -> Segovia
+    val context = LocalContext.current
+    val realLocationTracker = remember { RealLocationTracker(context) }
+    val realLocation by realLocationTracker.currentLocation.collectAsState()
+    val isTrackingActive by realLocationTracker.isTrackingActive.collectAsState()
+    val hasGpsFix by realLocationTracker.hasGpsFix.collectAsState()
+
+    var hasPermission by remember { mutableStateOf(realLocationTracker.hasPermission()) }
+    var isLiveGpsMode by remember { mutableStateOf(true) } // Por defecto: Modo GPS Real
+    var isSimulating by remember { mutableStateOf(false) }
+    var gloveModeEnabled by remember { mutableStateOf(true) }
+    var selectedProfile by remember { mutableStateOf(MotorcycleRoutingProfile.CURVY) }
+
+    // Gestor de permisos en tiempo de ejecución
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        hasPermission = granted
+        if (granted) {
+            realLocationTracker.startTracking()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!hasPermission) {
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        } else {
+            realLocationTracker.startTracking()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            realLocationTracker.stopTracking()
+        }
+    }
+
+    // Ruta de simulación alternativa (Madrid -> Navacerrada -> Segovia)
     val checkpoints = remember {
         listOf(
-            RouteCheckpoint("Salida: Madrid (M-607)", 0.0, "Sigue recto por M-607", 100, 16.0, 15.0, false),
-            RouteCheckpoint("Colmenar Viejo", 28.5, "En 500 m: Mantente a la derecha hacia Cerceda", 90, 15.0, 20.0, false),
-            RouteCheckpoint("Cercedilla (Inicio Puerto)", 54.0, "¡Atención! Comienza tramo de curvas reviradas", 60, 12.0, 28.0, false),
-            RouteCheckpoint("⚠️ Tramo V16 Activo", 61.2, "Precaución: Baliza V16 DGT 3.0 en arcén derecho", 50, 10.0, 35.0, false, true, "Vehículo detenido en curva ciega km 61"),
-            RouteCheckpoint("Puerto de Navacerrada (1.858 m)", 68.0, "Horquilla cerrada a la izquierda (Curva 180º)", 40, 6.0, 48.0, true), // Viento lateral + lluvia
-            RouteCheckpoint("Bajada hacia La Granja", 79.5, "Curvas enlazadas en bajada - Asfalto húmedo", 60, 9.0, 32.0, true),
-            RouteCheckpoint("Llegada: Segovia (Acueducto)", 92.0, "Has llegado a tu destino. ¡Ruta completada!", 50, 13.0, 18.0, false)
+            RouteCheckpoint("Salida: M-607", 0.0, "Inicia ruta hacia M-607", 100, 16.0, 15.0, false),
+            RouteCheckpoint("M-607 km 28", 28.5, "En 500 m: Salida hacia Cerceda / Navacerrada", 90, 15.0, 20.0, false),
+            RouteCheckpoint("M-601 Inicio Subida al Puerto", 45.0, "Precaución: Comienza tramo de curvas enlazadas", 60, 12.0, 28.0, false),
+            RouteCheckpoint("M-601 Tramo Curvas de Montaña", 52.0, "Atención: Incidencia DGT 3.0 detectada delante", 50, 10.0, 35.0, rainRisk = false, hasDgtAlert = true, dgtAlertDesc = "Vehículo detenido con baliza V16 a 250 m tras la curva"),
+            RouteCheckpoint("Puerto de Navacerrada (Cima 1.858 m)", 60.0, "Horquilla cerrada a la izquierda (Curva 180º)", 40, 6.0, 48.0, true),
+            RouteCheckpoint("CL-601 Bajada a La Granja", 72.0, "Precaución: Asfalto húmedo en zona de sombra", 60, 9.0, 32.0, true),
+            RouteCheckpoint("Llegada: Segovia", 84.0, "Destino alcanzado. ¡Ruta finalizada!", 50, 13.0, 18.0, false)
         )
     }
 
-    var isSimulating by remember { mutableStateOf(false) }
-    var currentIndex by remember { mutableIntStateOf(0) }
-    var gloveModeEnabled by remember { mutableStateOf(true) }
-    var selectedProfile by remember { mutableStateOf(MotorcycleRoutingProfile.CURVY) }
-    var currentSpeed by remember { mutableIntStateOf(0) }
-    var totalDistanceDoneKm by remember { mutableFloatStateOf(0f) }
+    var simIndex by remember { mutableIntStateOf(0) }
+    var simSpeed by remember { mutableIntStateOf(0) }
 
-    val activeCheckpoint = checkpoints[currentIndex]
-
-    // Simulación en bucle del GPS mientras está activo
     LaunchedEffect(isSimulating) {
         while (isSimulating) {
             delay(2500)
-            if (currentIndex < checkpoints.size - 1) {
-                currentIndex++
-                totalDistanceDoneKm = activeCheckpoint.distanceKm.toFloat()
-                // Variar velocidad según tipo de tramo
-                currentSpeed = when {
-                    activeCheckpoint.speedLimitKmh <= 50 -> (38..48).random()
-                    activeCheckpoint.speedLimitKmh <= 70 -> (55..68).random()
+            if (simIndex < checkpoints.size - 1) {
+                simIndex++
+                val cp = checkpoints[simIndex]
+                simSpeed = when {
+                    cp.speedLimitKmh <= 50 -> (38..48).random()
+                    cp.speedLimitKmh <= 70 -> (55..68).random()
                     else -> (88..102).random()
                 }
             } else {
                 isSimulating = false
-                currentSpeed = 0
+                simSpeed = 0
             }
         }
     }
+
+    // Datos de telemetría a mostrar: en Vivo (Hardware GPS) o Simulado
+    val activeSpeedKmh = if (isLiveGpsMode) {
+        ((realLocation?.speedMps ?: 0f) * 3.6f).roundToInt()
+    } else {
+        simSpeed
+    }
+
+    val activeManeuver = if (isLiveGpsMode) {
+        if (realLocation != null) "Navegación GPS Activa • Siguiendo rumbo" else "Esperando señal de satélites GPS..."
+    } else {
+        checkpoints[simIndex].maneuver
+    }
+
+    val activeSpeedLimit = if (isLiveGpsMode) 90 else checkpoints[simIndex].speedLimitKmh
 
     Box(
         modifier = modifier
@@ -135,7 +185,9 @@ fun MotorcycleNavigationScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(12.dp)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             // -------------------------------------------------------------
             // A. TURN-BY-TURN HUD SUPERIOR (Maniobras para casco/manillar)
@@ -149,42 +201,44 @@ fun MotorcycleNavigationScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(if (gloveModeEnabled) 18.dp else 12.dp),
+                        .padding(if (gloveModeEnabled) 16.dp else 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Icono de maniobra
                     Box(
                         modifier = Modifier
-                            .size(if (gloveModeEnabled) 64.dp else 52.dp)
+                            .size(if (gloveModeEnabled) 58.dp else 48.dp)
                             .background(ColorNeonGreen.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
                             .border(1.dp, ColorNeonGreen, RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (activeCheckpoint.maneuver.contains("izquierda", true)) "↰"
-                            else if (activeCheckpoint.maneuver.contains("derecha", true)) "↱"
-                            else if (activeCheckpoint.maneuver.contains("Horquilla", true)) "↺"
-                            else "↑",
-                            fontSize = 32.sp,
+                            text = if (isLiveGpsMode) "▲" else "↺",
+                            fontSize = 28.sp,
                             fontWeight = FontWeight.Black,
                             color = ColorNeonGreen
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(14.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = if (isLiveGpsMode) "GPS REAL EN VIVO" else "MODO SIMULACIÓN",
+                                color = if (isLiveGpsMode) ColorNeonGreen else ColorNeonAmber,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Black,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            if (isLiveGpsMode && hasGpsFix) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("• 3D FIX", color = ColorNeonGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                         Text(
-                            text = if (currentIndex < checkpoints.size - 1) "En ${(checkpoints[currentIndex + 1].distanceKm - activeCheckpoint.distanceKm).coerceAtLeast(0.5).let { String.format("%.1f km", it) }}" else "Destino alcanzado",
-                            color = ColorNeonGreen,
-                            fontSize = if (gloveModeEnabled) 20.sp else 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Text(
-                            text = activeCheckpoint.maneuver,
+                            text = activeManeuver,
                             color = Color.White,
-                            fontSize = if (gloveModeEnabled) 16.sp else 14.sp,
+                            fontSize = if (gloveModeEnabled) 15.sp else 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 2
                         )
@@ -192,12 +246,13 @@ fun MotorcycleNavigationScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // -------------------------------------------------------------
-            // B. ALERTA DGT 3.0 / BALIZA V16 (Si está en el tramo)
+            // B. ALERTA DGT 3.0 / BALIZA V16
             // -------------------------------------------------------------
-            AnimatedVisibility(visible = activeCheckpoint.hasDgtAlert) {
+            val showDgtAlert = !isLiveGpsMode && checkpoints[simIndex].hasDgtAlert
+            AnimatedVisibility(visible = showDgtAlert) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -207,22 +262,22 @@ fun MotorcycleNavigationScreen(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("🚨", fontSize = 24.sp)
+                        Text("🚨", fontSize = 22.sp)
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                "ALERTA DGT 3.0: BALIZA V16 CONECTADA",
+                                "ALERTA DGT 3.0: VEHÍCULO EN CALZADA A 250 m",
                                 color = ColorDangerRed,
                                 fontWeight = FontWeight.Black,
-                                fontSize = 13.sp
+                                fontSize = 12.sp
                             )
                             Text(
-                                activeCheckpoint.dgtAlertDesc ?: "Vehículo averiado en calzada",
+                                "Baliza V16 conectada activa tras la curva",
                                 color = Color.White,
-                                fontSize = 13.sp
+                                fontSize = 12.sp
                             )
                         }
                     }
@@ -230,7 +285,7 @@ fun MotorcycleNavigationScreen(
             }
 
             // -------------------------------------------------------------
-            // C. LIENZO DEL MAPA INTERACTIVO (Curvas y Telemetría en Moto)
+            // C. LIENZO DEL MAPA INTERACTIVO Y CURSOR GPS DE LA MOTO
             // -------------------------------------------------------------
             Box(
                 modifier = Modifier
@@ -240,69 +295,125 @@ fun MotorcycleNavigationScreen(
                     .background(ColorSlateSurface)
                     .border(1.dp, ColorCardBorder, RoundedCornerShape(16.dp))
             ) {
-                // Dibujo de la carretera con curvas
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
 
-                    // Dibujar asfalto de la ruta
-                    val path = Path().apply {
+                    // 1. Dibujar carretera / trazado
+                    val roadPath = Path().apply {
                         moveTo(w * 0.15f, h * 0.85f)
-                        cubicTo(w * 0.3f, h * 0.7f, w * 0.2f, h * 0.45f, w * 0.5f, h * 0.45f)
-                        cubicTo(w * 0.8f, h * 0.45f, w * 0.7f, h * 0.2f, w * 0.85f, h * 0.12f)
+                        cubicTo(w * 0.35f, h * 0.7f, w * 0.2f, h * 0.45f, w * 0.5f, h * 0.45f)
+                        cubicTo(w * 0.8f, h * 0.45f, w * 0.7f, h * 0.2f, w * 0.85f, h * 0.15f)
                     }
 
-                    // Asfalto base oscuro
-                    drawPath(path, color = Color(0xFF1E293B), style = Stroke(width = 36f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                    // Trazada Verde Neón (Racing Line)
-                    drawPath(path, color = ColorNeonGreen, style = Stroke(width = 10f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    // Asfalto y línea verde
+                    drawPath(roadPath, color = Color(0xFF1E293B), style = Stroke(width = 34f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    drawPath(roadPath, color = ColorNeonGreen.copy(alpha = 0.6f), style = Stroke(width = 8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
 
-                    // Dibujar posición actual de la moto en la curva
-                    val progressRatio = (currentIndex.toFloat() / (checkpoints.size - 1).toFloat()).coerceIn(0f, 1f)
-                    val motoX = w * (0.15f + progressRatio * 0.7f)
-                    val motoY = h * (0.85f - progressRatio * 0.73f)
+                    // 2. Coordenadas del cursor de la moto
+                    val (cursorX, cursorY, bearing) = if (isLiveGpsMode) {
+                        // En modo GPS Real: centro de la pantalla con rumbo del sensor
+                        val b = realLocation?.bearingDegrees ?: 0f
+                        Triple(w * 0.5f, h * 0.5f, b)
+                    } else {
+                        // En modo simulación: avanza por el trazado
+                        val progress = (simIndex.toFloat() / (checkpoints.size - 1).toFloat()).coerceIn(0f, 1f)
+                        Triple(w * (0.15f + progress * 0.7f), h * (0.85f - progress * 0.7f), 45f)
+                    }
 
-                    // Halo de radar GPS
-                    drawCircle(ColorNeonGreen.copy(alpha = 0.25f), radius = 28f, center = Offset(motoX, motoY))
-                    // Punto central de la moto
-                    drawCircle(Color.White, radius = 12f, center = Offset(motoX, motoY))
-                    drawCircle(ColorNeonGreen, radius = 7f, center = Offset(motoX, motoY))
+                    // Círculo de precisión GPS (pulso radar)
+                    drawCircle(ColorNeonGreen.copy(alpha = 0.2f), radius = 34f, center = Offset(cursorX, cursorY))
+                    drawCircle(ColorNeonGreen.copy(alpha = 0.4f), radius = 22f, center = Offset(cursorX, cursorY))
+
+                    // Cursor de flecha / moto rotando según rumbo real
+                    rotate(degrees = bearing, pivot = Offset(cursorX, cursorY)) {
+                        val arrowPath = Path().apply {
+                            moveTo(cursorX, cursorY - 20f)
+                            lineTo(cursorX + 14f, cursorY + 16f)
+                            lineTo(cursorX, cursorY + 10f)
+                            lineTo(cursorX - 14f, cursorY + 16f)
+                            close()
+                        }
+                        drawPath(arrowPath, color = ColorNeonGreen)
+                        drawCircle(Color.White, radius = 4f, center = Offset(cursorX, cursorY))
+                    }
                 }
 
-                // Overlay de información del mapa
+                // Overlay de información del GPS en tiempo real
                 Column(
                     modifier = Modifier
                         .align(Alignment.TopStart)
-                        .padding(12.dp)
+                        .padding(10.dp)
                 ) {
-                    Text(
-                        text = "Ruta: ${activeCheckpoint.name}",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        text = "Perfil: ${selectedProfile.displayName}",
-                        color = ColorNeonAmber,
-                        fontSize = 12.sp
-                    )
+                    if (isLiveGpsMode) {
+                        if (realLocation != null) {
+                            Text(
+                                text = "LAT: ${String.format("%.5f", realLocation!!.latitude)}  LON: ${String.format("%.5f", realLocation!!.longitude)}",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = "ALT: ${realLocation!!.elevationMeters?.roundToInt() ?: 0} m  •  PRECISIÓN: ±${realLocation!!.accuracyMeters?.roundToInt() ?: 0} m",
+                                color = ColorNeonGreen,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp
+                            )
+                        } else {
+                            Text(
+                                text = if (!hasPermission) "⚠️ Permiso de ubicación no concedido" else "🛰️ Adquiriendo satélites GPS...",
+                                color = ColorNeonAmber,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "Ruta: ${checkpoints[simIndex].name}",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "Perfil: ${selectedProfile.displayName}",
+                            color = ColorNeonAmber,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
 
-                // Botón de recentrado flotante
+                // Selector rápido: GPS Real vs Simulación
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(12.dp)
-                        .size(if (gloveModeEnabled) 56.dp else 44.dp)
-                        .background(ColorNeonGreen, CircleShape)
-                        .clickable { /* Recentrar */ },
-                    contentAlignment = Alignment.Center
+                        .padding(10.dp)
                 ) {
-                    Text("📍", fontSize = 22.sp)
+                    Button(
+                        onClick = {
+                            isLiveGpsMode = !isLiveGpsMode
+                            if (isLiveGpsMode) {
+                                isSimulating = false
+                                realLocationTracker.startTracking()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isLiveGpsMode) ColorNeonGreen else Color(0xFF1E293B),
+                            contentColor = if (isLiveGpsMode) Color.Black else Color.White
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text(
+                            text = if (isLiveGpsMode) "🛰️ GPS REAL" else "🎮 MODO SIMULACIÓN",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // -------------------------------------------------------------
             // D. TIRA METEOROLÓGICA PREDICTIVA (Open-Meteo & AEMET)
@@ -316,45 +427,37 @@ fun MotorcycleNavigationScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (activeCheckpoint.rainRisk) "🌧️" else "⛅", fontSize = 20.sp)
+                        Text("⛅", fontSize = 18.sp)
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "${activeCheckpoint.tempCelsius.roundToInt()}ºC",
+                            text = if (isLiveGpsMode) "17ºC" else "${checkpoints[simIndex].tempCelsius.roundToInt()}ºC",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             fontFamily = FontFamily.Monospace
                         )
                     }
 
-                    // Viento lateral (crítico para moto)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("💨", fontSize = 18.sp)
+                        Text("💨", fontSize = 16.sp)
                         Spacer(modifier = Modifier.width(4.dp))
-                        val isWindHazard = activeCheckpoint.windGustKmh > 40
                         Text(
-                            text = "${activeCheckpoint.windGustKmh.roundToInt()} km/h racha",
-                            color = if (isWindHazard) ColorNeonAmber else Color.White,
-                            fontWeight = if (isWindHazard) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = 13.sp
+                            text = if (isLiveGpsMode) "14 km/h" else "${checkpoints[simIndex].windGustKmh.roundToInt()} km/h",
+                            color = Color.White,
+                            fontSize = 12.sp
                         )
                     }
 
-                    // Aviso si hay asfalto resbaladizo
-                    if (activeCheckpoint.rainRisk) {
-                        Text("⚠️ Asfalto mojado", color = ColorNeonAmber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    } else {
-                        Text("Asfalto seco", color = ColorNeonGreen, fontSize = 12.sp)
-                    }
+                    Text("Asfalto seco", color = ColorNeonGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // -------------------------------------------------------------
             // E. PANEL INFERIOR: VELOCÍMETRO DIGITAL Y CONTROLES MOTO
@@ -373,32 +476,31 @@ fun MotorcycleNavigationScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 12.dp, horizontal = 16.dp),
+                            .padding(vertical = 8.dp, horizontal = 12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        val isOverSpeed = currentSpeed > activeCheckpoint.speedLimitKmh
+                        val isOverSpeed = activeSpeedKmh > activeSpeedLimit
                         Text(
-                            text = "$currentSpeed",
-                            fontSize = if (gloveModeEnabled) 48.sp else 40.sp,
+                            text = "$activeSpeedKmh",
+                            fontSize = if (gloveModeEnabled) 44.sp else 36.sp,
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace,
                             color = if (isOverSpeed) ColorDangerRed else ColorNeonGreen
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("km/h", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            // Señal de límite de velocidad
+                            Text("km/h", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.width(6.dp))
                             Box(
                                 modifier = Modifier
-                                    .size(24.dp)
+                                    .size(22.dp)
                                     .background(Color.White, CircleShape)
                                     .border(2.dp, Color.Red, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    "${activeCheckpoint.speedLimitKmh}",
+                                    "$activeSpeedLimit",
                                     color = Color.Black,
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     fontWeight = FontWeight.Black
                                 )
                             }
@@ -406,7 +508,7 @@ fun MotorcycleNavigationScreen(
                     }
                 }
 
-                // Tarjeta de Controles de Simulación y Modo Guantes
+                // Tarjeta de Controles
                 Card(
                     modifier = Modifier.weight(1.8f),
                     colors = CardDefaults.cardColors(containerColor = ColorSlateSurface),
@@ -416,38 +518,47 @@ fun MotorcycleNavigationScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(10.dp),
+                            .padding(8.dp),
                         verticalArrangement = Arrangement.Center
                     ) {
                         Button(
                             onClick = {
-                                if (currentIndex >= checkpoints.size - 1) currentIndex = 0
-                                isSimulating = !isSimulating
+                                if (isLiveGpsMode) {
+                                    if (isTrackingActive) realLocationTracker.stopTracking()
+                                    else realLocationTracker.startTracking()
+                                } else {
+                                    if (simIndex >= checkpoints.size - 1) simIndex = 0
+                                    isSimulating = !isSimulating
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isSimulating) ColorDangerRed else ColorNeonGreen,
+                                containerColor = if (isTrackingActive || isSimulating) ColorDangerRed else ColorNeonGreen,
                                 contentColor = Color.Black
                             ),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(if (gloveModeEnabled) 50.dp else 40.dp)
+                                .height(if (gloveModeEnabled) 46.dp else 38.dp)
                         ) {
                             Text(
-                                text = if (isSimulating) "⏹ DETENER RUTA" else "▶ INICIAR RUTA GPS",
+                                text = if (isLiveGpsMode) {
+                                    if (isTrackingActive) "⏹ DETENER GPS" else "▶ ACTIVAR GPS REAL"
+                                } else {
+                                    if (isSimulating) "⏹ DETENER SIM" else "▶ INICIAR SIM"
+                                },
                                 fontWeight = FontWeight.Black,
-                                fontSize = 14.sp
+                                fontSize = 12.sp
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Modo Guantes", color = Color.White, fontSize = 12.sp)
+                            Text("Modo Guantes", color = Color.White, fontSize = 11.sp)
                             Switch(
                                 checked = gloveModeEnabled,
                                 onCheckedChange = { gloveModeEnabled = it },

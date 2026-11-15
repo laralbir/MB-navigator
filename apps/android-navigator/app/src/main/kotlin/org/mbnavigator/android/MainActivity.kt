@@ -2,6 +2,7 @@ package org.mbnavigator.android
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,7 +17,11 @@ class MainActivity : ComponentActivity() {
     setTheme(R.style.Theme_MBNavigator)
     super.onCreate(savedInstanceState)
 
-    enableEdgeToEdge()
+    // Ajuste Edge-to-Edge con iconos claros en barra de estado y navegación sobre fondo asfalto
+    enableEdgeToEdge(
+      statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+      navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+    )
     setContent {
       MBNavigatorTheme { Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { MainNavigation() } }
     }
